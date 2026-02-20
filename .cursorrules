@@ -1,0 +1,5 @@
+# System Instructions for AI Assistant
+
+CRITICAL RULE:
+Always generate the release APK file after making any code changes going forward.
+You must run the `npm run android:release` command at the end of any task that modifies the application code to ensure the APK is up-to-date.
