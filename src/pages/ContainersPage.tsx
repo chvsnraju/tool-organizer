@@ -1,9 +1,10 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Package, Camera, MapPin, Search, X, ChevronUp, Loader2 } from 'lucide-react';
+import { ArrowLeft, Package, Camera, MapPin, Search, X, ChevronUp, Loader2, QrCode } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useToast } from '../hooks/useToast';
 import { getListBatchSize } from '../lib/listPerformance';
+import { PrintableQRCode } from '../components/PrintableQRCode';
 import type { Location, Item } from '../types';
 
 const CONTAINER_ITEMS_BATCH_SIZE = getListBatchSize('containers');
@@ -194,6 +195,21 @@ export const ContainersPage: React.FC = () => {
 
       {/* Main Content */}
       <div className="flex-1 p-4 space-y-4">
+        {/* QR Code Section */}
+        <div className="bg-muted/30 border border-border/40 rounded-xl p-4 space-y-3">
+          <h3 className="text-xs font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+            <QrCode className="w-3.5 h-3.5" /> Location Label
+          </h3>
+          <p className="text-xs text-muted-foreground">Print this QR code and place it on your toolbox, shelf, or storage room.</p>
+          <div className="flex justify-center">
+            <PrintableQRCode 
+              url={`${window.location.origin}/locations/${location.id}/containers`} 
+              title={location.name} 
+              subtitle="Scan with ToolShed App" 
+            />
+          </div>
+        </div>
+
         {/* Scan CTA */}
         <div className="bg-primary/5 border border-primary/20 rounded-xl p-4 flex items-center justify-between">
           <div className="space-y-0.5 flex-1 mr-3">

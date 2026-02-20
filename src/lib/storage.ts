@@ -35,7 +35,7 @@ const MAX_IMAGE_BYTES = 10 * 1024 * 1024; // 10 MB
 
 export async function uploadImage(
   base64: string,
-  bucket: 'items' | 'containers',
+  bucket: 'items' | 'containers' | 'receipts',
   userId: string
 ): Promise<string> {
   // Rough size check on the raw base64 string (actual bytes ≈ 75% of base64 length)
@@ -71,7 +71,7 @@ export async function uploadImage(
   return urlData.publicUrl;
 }
 
-export async function deleteImage(url: string, bucket: 'items' | 'containers'): Promise<void> {
+export async function deleteImage(url: string, bucket: 'items' | 'containers' | 'receipts'): Promise<void> {
   // Only delete from storage if it's a Supabase storage URL (not base64)
   if (!url || url.startsWith('data:')) return;
 

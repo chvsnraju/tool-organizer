@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { X, Save, Loader2, Tag as TagIcon, Trash2, ImagePlus, Star, DollarSign, Hash, AlertCircle, Plus, Sparkles, Crop } from 'lucide-react';
+import { X, Save, Loader2, Tag as TagIcon, Trash2, ImagePlus, Star, DollarSign, Hash, AlertCircle, Plus, Sparkles, Crop, Calendar, FileText } from 'lucide-react';
 import { Camera, CameraResultType, CameraSource } from '@capacitor/camera';
 import { supabase } from '../lib/supabase';
 import { uploadImage, deleteImage } from '../lib/storage';
@@ -40,6 +40,10 @@ export const EditItemModal: React.FC<EditItemModalProps> = ({ item, isOpen, onCl
   const [isConsumable, setIsConsumable] = useState(false);
   const [lowStockThreshold, setLowStockThreshold] = useState(0);
   const [estimatedPrice, setEstimatedPrice] = useState('');
+  const [purchaseDate, setPurchaseDate] = useState('');
+  const [purchasePrice, setPurchasePrice] = useState<number | ''>('');
+  const [receiptImageUrl, setReceiptImageUrl] = useState<string | null>(null);
+  const [uploadingReceipt, setUploadingReceipt] = useState(false);
 
   // Specs editor
   const [specs, setSpecs] = useState<[string, string][]>([]);
@@ -80,6 +84,9 @@ export const EditItemModal: React.FC<EditItemModalProps> = ({ item, isOpen, onCl
       setIsConsumable(item.is_consumable || false);
       setLowStockThreshold(item.low_stock_threshold || 0);
       setEstimatedPrice(item.estimated_price || '');
+      setPurchaseDate(item.purchase_date || '');
+      setPurchasePrice(item.purchase_price ?? '');
+      setReceiptImageUrl(item.receipt_image_url || null);
 
       // Initialize specs from item
       if (item.specs && typeof item.specs === 'object') {
@@ -178,6 +185,30 @@ export const EditItemModal: React.FC<EditItemModalProps> = ({ item, isOpen, onCl
        }
     } finally {
       setUploadingImage(false);
+    }
+  };
+
+  const handleUploadReceipt = async () => {
+    try {
+      const image = await Camera.getPhoto({
+        quality: 90,
+        resultType: CameraResultType.Base64,
+        source: CameraSource.Prompt,
+      });
+      if (!image.base64String) return;
+      setUploadingReceipt(true);
+      const base64 = `data:image/${image.format};base64,${image.base64String}`;
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error('Not authenticated');
+      const imageUrl = await uploadImage(base64, 'receipts', user.id);
+      setReceiptImageUrl(imageUrl);
+      addToast('Receipt uploaded', 'success');
+    } catch (error) {
+       if ((error as Error).message !== 'User cancelled photos app') {
+          console.debug('Receipt upload error:', error);
+       }
+    } finally {
+      setUploadingReceipt(false);
     }
   };
 
@@ -334,6 +365,9 @@ export const EditItemModal: React.FC<EditItemModalProps> = ({ item, isOpen, onCl
         is_consumable: isConsumable,
         low_stock_threshold: isConsumable ? lowStockThreshold : 0,
         estimated_price: estimatedPrice || null,
+        purchase_date: purchaseDate || null,
+        purchase_price: purchasePrice === '' ? null : purchasePrice,
+        receipt_image_url: receiptImageUrl,
         specs: specsObj,
       };
 
@@ -365,6 +399,9 @@ export const EditItemModal: React.FC<EditItemModalProps> = ({ item, isOpen, onCl
             tags: tagArray,
             container_id: normalizedContainerId,
             image_url: normalizedImageUrl,
+            purchase_date: purchaseDate || null,
+            purchase_price: purchasePrice === '' ? null : purchasePrice,
+            receipt_image_url: receiptImageUrl,
             specs: specsObj,
           };
 
@@ -520,6 +557,40 @@ export const EditItemModal: React.FC<EditItemModalProps> = ({ item, isOpen, onCl
               <DollarSign className="w-3 h-3" /> Estimated Price
             </label>
             <input value={estimatedPrice} onChange={e => setEstimatedPrice(e.target.value)} placeholder="$29-49" className="w-full px-3 py-2.5 border rounded-lg bg-[hsl(var(--background))] text-sm focus:ring-2 focus:ring-primary/20 focus:border-primary/40 outline-none transition-all" />
+          </div>
+
+          {/* Insurance / Purchase Info */}
+          <div className="border-t border-border/50 pt-4 space-y-3">
+            <h4 className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5"><FileText className="w-3.5 h-3.5" /> Insurance & Purchase Tracking</h4>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="text-[10px] uppercase text-muted-foreground block mb-1">Purchase Date</label>
+                <div className="relative">
+                  <Calendar className="w-4 h-4 absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
+                  <input type="date" value={purchaseDate} onChange={e => setPurchaseDate(e.target.value)} className="w-full pl-9 pr-3 py-2 border rounded-lg bg-card text-sm focus:ring-2 focus:ring-primary/20 outline-none" />
+                </div>
+              </div>
+              <div>
+                <label className="text-[10px] uppercase text-muted-foreground block mb-1">Purchase Price</label>
+                <div className="relative">
+                  <DollarSign className="w-4 h-4 absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
+                  <input type="number" min="0" step="0.01" value={purchasePrice} onChange={e => setPurchasePrice(e.target.value === '' ? '' : Number(e.target.value))} className="w-full pl-9 pr-3 py-2 border rounded-lg bg-card text-sm focus:ring-2 focus:ring-primary/20 outline-none" placeholder="0.00" />
+                </div>
+              </div>
+            </div>
+            <div>
+              <label className="text-[10px] uppercase text-muted-foreground block mb-1">Receipt / Proof of Purchase</label>
+              {receiptImageUrl ? (
+                <div className="relative inline-block border rounded-xl overflow-hidden group">
+                  <img src={receiptImageUrl} alt="Receipt" className="h-20 w-20 object-cover" />
+                  <button type="button" onClick={() => setReceiptImageUrl(null)} className="absolute inset-0 bg-black/50 text-white flex justify-center items-center opacity-0 group-hover:opacity-100 transition-opacity"><Trash2 className="w-4 h-4" /></button>
+                </div>
+              ) : (
+                <button type="button" onClick={handleUploadReceipt} disabled={uploadingReceipt} className="w-full py-2 border border-dashed rounded-lg text-sm text-muted-foreground hover:border-primary/50 hover:text-foreground transition-colors flex items-center justify-center gap-2 bg-card">
+                  {uploadingReceipt ? <Loader2 className="w-4 h-4 animate-spin" /> : <><ImagePlus className="w-4 h-4" /> Upload Receipt</>}
+                </button>
+              )}
+            </div>
           </div>
 
           {/* ====== SPECS EDITOR ====== */}

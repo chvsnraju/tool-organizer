@@ -19,6 +19,9 @@ export interface ToolAnalysis {
   manualUrl?: string;
   videoUrl?: string;
   imageUrl?: string;
+  requiresMaintenance?: boolean;
+  maintenanceIntervalDays?: number | null;
+  maintenanceTask?: string;
 }
 
 interface BarcodeLookupResult {
@@ -163,6 +166,9 @@ function validateToolAnalysis(raw: unknown): ToolAnalysis {
     manualUrl: typeof obj.manualUrl === 'string' ? obj.manualUrl : undefined,
     videoUrl: typeof obj.videoUrl === 'string' ? obj.videoUrl : undefined,
     imageUrl: typeof obj.imageUrl === 'string' ? obj.imageUrl : undefined,
+    requiresMaintenance: typeof obj.requiresMaintenance === 'boolean' ? obj.requiresMaintenance : false,
+    maintenanceIntervalDays: typeof obj.maintenanceIntervalDays === 'number' ? obj.maintenanceIntervalDays : null,
+    maintenanceTask: typeof obj.maintenanceTask === 'string' ? obj.maintenanceTask : undefined,
   };
 }
 
@@ -403,7 +409,10 @@ export const analyzeImage = async (base64Image: string, userContext?: string): P
          "Material": "Steel"
       },
       "manualSearchQuery": "search query to find the product manual online (e.g. 'DeWalt DCD771 user manual PDF')",
-      "videoSearchQuery": "search query to find a how-to or review video (e.g. 'DeWalt DCD771 drill review tutorial')"
+      "videoSearchQuery": "search query to find a how-to or review video (e.g. 'DeWalt DCD771 drill review tutorial')",
+      "requiresMaintenance": true/false,
+      "maintenanceIntervalDays": 180 (estimated days between routine maintenance, or null if none),
+      "maintenanceTask": "Identify primary maintenance needed (e.g. 'Change oil', 'Sharpen blade', 'Lubricate chain')"
     }
   `;
 
@@ -444,7 +453,10 @@ export const analyzeBulkImage = async (base64Image: string, userContext?: string
         "estimatedPrice": "Estimated price range in USD",
         "specs": { "key": "value" },
         "manualSearchQuery": "search query to find the product manual",
-        "videoSearchQuery": "search query to find a how-to video"
+        "videoSearchQuery": "search query to find a how-to video",
+        "requiresMaintenance": true/false,
+        "maintenanceIntervalDays": 180,
+        "maintenanceTask": "Primary maintenance task"
       }
     ]
 
@@ -533,7 +545,10 @@ export const analyzeBarcode = async (
       "videoUrl": "Direct tutorial/review URL when known, else a search URL",
       "imageUrl": "Direct main product image URL if known",
       "manualSearchQuery": "search query for manual",
-      "videoSearchQuery": "search query for tutorial/review"
+      "videoSearchQuery": "search query for tutorial/review",
+      "requiresMaintenance": true/false,
+      "maintenanceIntervalDays": 180,
+      "maintenanceTask": "Routine maintenance task description if applicable"
     }
   `;
 
@@ -614,7 +629,10 @@ export const analyzeBarcodeFromImage = async (
         "videoUrl": "Direct tutorial/review URL when known, else a search URL",
         "imageUrl": "Direct main product image URL if known",
         "manualSearchQuery": "search query for manual",
-        "videoSearchQuery": "search query for tutorial/review"
+        "videoSearchQuery": "search query for tutorial/review",
+        "requiresMaintenance": true,
+        "maintenanceIntervalDays": 60,
+        "maintenanceTask": "Example task"
       }
     }
   `;
@@ -653,6 +671,9 @@ export const analyzeBarcodeFromImage = async (
       ...(imageAnalysis.specs || {}),
       ...(analysis.specs || {}),
     },
+    requiresMaintenance: analysis.requiresMaintenance || imageAnalysis.requiresMaintenance,
+    maintenanceIntervalDays: analysis.maintenanceIntervalDays || imageAnalysis.maintenanceIntervalDays,
+    maintenanceTask: analysis.maintenanceTask || imageAnalysis.maintenanceTask,
   };
 
   return { barcode, analysis: mergedAnalysis };

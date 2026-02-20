@@ -4,7 +4,7 @@ import { Capacitor } from '@capacitor/core';
 import { CameraCapture } from '../components/CameraCapture';
 import { analyzeImage, analyzeBulkImage, analyzeBarcode, analyzeBarcodeFromImage, findDuplicates, isHttpUrl, type ToolAnalysis } from '../lib/gemini';
 import { uploadImage } from '../lib/storage';
-import { Loader2, Plus, Sparkles, MapPin, X, Camera, ImagePlus, ChevronRight, Layers, AlertTriangle, Mic, MicOff, Check, ScanBarcode } from 'lucide-react';
+import { Loader2, Plus, Sparkles, MapPin, X, Camera, ImagePlus, ChevronRight, Layers, AlertTriangle, Mic, MicOff, Check, ScanBarcode, Wrench } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useToast } from '../hooks/useToast';
 import { ContainerSelector } from '../components/ContainerSelector';
@@ -161,6 +161,14 @@ export const ScanPage: React.FC = () => {
   };
 
   const handleBarcodeDetected = async (barcode: string, frameImage: string | null) => {
+    // Intercept internal QR codes for quick navigation
+    const appBaseUrl = window.location.origin;
+    if (barcode.startsWith(appBaseUrl)) {
+      const path = barcode.substring(appBaseUrl.length);
+      navigate(path);
+      return;
+    }
+
     setBarcodeValue(barcode);
     setImage(frameImage);
     setAnalyzing(true);
@@ -238,6 +246,7 @@ export const ScanPage: React.FC = () => {
           BarcodeFormat.Code128,
           BarcodeFormat.Code39,
           BarcodeFormat.Itf,
+          BarcodeFormat.QrCode,
         ],
         autoZoom: true,
       });
@@ -417,7 +426,7 @@ export const ScanPage: React.FC = () => {
         ? `https://www.youtube.com/results?search_query=${encodeURIComponent(result.videoSearchQuery)}` : null);
       const productUrlToSave = userUrl || result?.productUrl || null;
 
-      const { error } = await supabase.from('items').insert({
+      const { data: newItem, error } = await supabase.from('items').insert({
         name: editedName,
         description: editedDescription,
         category: editedCategory || null,
@@ -433,9 +442,25 @@ export const ScanPage: React.FC = () => {
         estimated_price: editedPrice || null,
         manual_url: manualUrl,
         video_url: videoUrl,
-      });
+      }).select('id').single();
 
       if (error) throw error;
+
+      if (result?.requiresMaintenance && result?.maintenanceTask && newItem) {
+        const interval = result.maintenanceIntervalDays || 180;
+        const nextDue = new Date();
+        nextDue.setDate(nextDue.getDate() + interval);
+
+        await supabase.from('maintenance_reminders').insert({
+          item_id: newItem.id,
+          task_description: result.maintenanceTask,
+          interval_days: interval,
+          last_performed: new Date().toISOString().split('T')[0],
+          next_due: nextDue.toISOString().split('T')[0],
+          is_recurring: true,
+          user_id: user.id
+        });
+      }
 
       triggerSmartReminderSync();
 
@@ -476,7 +501,7 @@ export const ScanPage: React.FC = () => {
         const videoUrl = item.videoSearchQuery
           ? `https://www.youtube.com/results?search_query=${encodeURIComponent(item.videoSearchQuery)}` : null;
 
-        const { error } = await supabase.from('items').insert({
+        const { data: newItem, error } = await supabase.from('items').insert({
           name: item.name,
           description: item.description,
           category: item.category || null,
@@ -490,9 +515,26 @@ export const ScanPage: React.FC = () => {
           estimated_price: item.estimatedPrice || null,
           manual_url: manualUrl,
           video_url: videoUrl,
-        });
+        }).select('id').single();
 
         if (error) throw error;
+
+        if (item.requiresMaintenance && item.maintenanceTask && newItem) {
+          const interval = item.maintenanceIntervalDays || 180;
+          const nextDue = new Date();
+          nextDue.setDate(nextDue.getDate() + interval);
+
+          await supabase.from('maintenance_reminders').insert({
+            item_id: newItem.id,
+            task_description: item.maintenanceTask,
+            interval_days: interval,
+            last_performed: new Date().toISOString().split('T')[0],
+            next_due: nextDue.toISOString().split('T')[0],
+            is_recurring: true,
+            user_id: user.id
+          });
+        }
+
         return i;
       })
     );
@@ -826,6 +868,11 @@ export const ScanPage: React.FC = () => {
                             <Check className="w-3 h-3" /> Saved
                           </span>
                         )}
+                        {item.requiresMaintenance && item.maintenanceTask && (
+                          <span className="text-[10px] font-medium text-amber-600 dark:text-amber-400 flex items-center gap-1 bg-amber-500/10 px-2 py-0.5 rounded-full ml-1">
+                            <Wrench className="w-3 h-3" /> Auto-Schedule AI Maintenance
+                          </span>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -1098,6 +1145,20 @@ export const ScanPage: React.FC = () => {
                   </div>
                 )}
               </div>
+
+              {result.requiresMaintenance && result.maintenanceTask && (
+                <div className="bg-amber-500/10 border border-amber-500/20 rounded-xl p-4 flex items-start gap-3 mt-4">
+                  <Wrench className="w-5 h-5 text-amber-600 dark:text-amber-400 mt-0.5" />
+                  <div>
+                    <h4 className="text-sm font-semibold text-amber-600 dark:text-amber-400">AI Maintenance Suggestion</h4>
+                    <p className="text-xs text-amber-700/80 dark:text-amber-300/80 mt-1">
+                      {result.maintenanceTask}
+                      {result.maintenanceIntervalDays && ` (Every ${result.maintenanceIntervalDays} days)`}
+                    </p>
+                    <p className="text-[10px] text-amber-600/60 dark:text-amber-400/60 mt-2 italic">A smart reminder will be scheduled automatically when you save.</p>
+                  </div>
+                </div>
+              )}
 
               <ContainerSelector
                 value={selectedContainerId}

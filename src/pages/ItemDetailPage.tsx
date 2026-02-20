@@ -4,11 +4,12 @@ import { supabase } from '../lib/supabase';
 import {
   Loader2, ArrowLeft, MapPin, Edit3, Trash2, ChevronLeft, ChevronRight,
   Star, Wrench, ArrowLeftRight, ExternalLink, BookOpen, Play,
-  Package, DollarSign, AlertCircle, Tag, Hash, X
+  Package, DollarSign, AlertCircle, Tag, Hash, X, FileText, Calendar, QrCode
 } from 'lucide-react';
 import { EditItemModal } from '../components/EditItemModal';
 import { useToast } from '../hooks/useToast';
 import { triggerSmartReminderSync } from '../lib/notifications';
+import { PrintableQRCode } from '../components/PrintableQRCode';
 import { type Item, type ItemCondition, type ToolLoan, CONDITION_LABELS, CONDITION_COLORS } from '../types';
 
 export const ItemDetailPage: React.FC = () => {
@@ -367,6 +368,34 @@ export const ItemDetailPage: React.FC = () => {
           </div>
         )}
 
+        {/* Purchase Info */}
+        {(item.purchase_date || item.purchase_price || item.receipt_image_url) && (
+          <div className="bg-muted/30 border border-border/40 rounded-xl p-4 space-y-3">
+            <h3 className="text-xs font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+              <FileText className="w-3.5 h-3.5" /> Purchase & Insurance
+            </h3>
+            <div className="flex flex-wrap gap-4">
+              {item.purchase_date && (
+                <div className="flex items-center gap-2">
+                  <Calendar className="w-4 h-4 text-muted-foreground" />
+                  <span className="text-sm font-medium">{new Date(item.purchase_date).toLocaleDateString()}</span>
+                </div>
+              )}
+              {item.purchase_price != null && (
+                <div className="flex items-center gap-2">
+                  <DollarSign className="w-4 h-4 text-emerald-500" />
+                  <span className="text-sm font-medium text-emerald-600 dark:text-emerald-400">{item.purchase_price.toFixed(2)}</span>
+                </div>
+              )}
+            </div>
+            {item.receipt_image_url && (
+              <a href={item.receipt_image_url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-2 px-3 py-2 bg-card border border-border/50 rounded-lg text-xs font-medium hover:border-primary/30 transition-colors">
+                <FileText className="w-4 h-4" /> View Receipt
+              </a>
+            )}
+          </div>
+        )}
+
         {/* Tags */}
         {item.tags && item.tags.length > 0 && (
           <div className="flex flex-wrap gap-1.5">
@@ -380,20 +409,36 @@ export const ItemDetailPage: React.FC = () => {
 
         {/* Specs */}
         {item.specs && Object.keys(item.specs).length > 0 && (
-          <div>
-            <h3 className="text-xs font-bold uppercase tracking-wider text-muted-foreground mb-2">Specifications</h3>
-            <div className="bg-card border border-border/40 rounded-xl overflow-hidden divide-y divide-border/30">
+          <div className="bg-card border rounded-2xl p-5 shadow-sm space-y-3">
+            <h3 className="text-xs font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+              <Hash className="w-3.5 h-3.5" /> Specifications
+            </h3>
+            <div className="grid grid-cols-2 gap-x-4 gap-y-2">
               {Object.entries(item.specs).map(([key, value]) => (
-                <div key={key} className="flex justify-between px-4 py-2.5">
-                  <span className="text-sm text-muted-foreground">{key}</span>
-                  <span className="text-sm font-medium tabular-nums">{String(value)}</span>
+                <div key={key} className="flex flex-col">
+                  <span className="text-[10px] uppercase text-muted-foreground">{key}</span>
+                  <span className="text-sm font-medium">{String(value)}</span>
                 </div>
               ))}
             </div>
           </div>
         )}
 
-        {/* Links: Manual & Video */}
+        {/* QR Code Section */}
+        <div className="bg-muted/30 border border-border/40 rounded-xl p-4 space-y-3">
+          <h3 className="text-xs font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+            <QrCode className="w-3.5 h-3.5" /> Item Label 
+          </h3>
+          <p className="text-xs text-muted-foreground">Print this QR code and attach it to your tool for quick scanning later.</p>
+          <div className="flex justify-center">
+            <PrintableQRCode 
+              url={`${window.location.origin}/item/${item.id}`} 
+              title={item.name || 'Unknown Item'} 
+              subtitle="Scan with ToolShed App" 
+            />
+          </div>
+        </div>
+      {/* Links: Manual & Video */}
         {(item.manual_url || item.video_url) && (
           <div className="space-y-2">
             <h3 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Resources</h3>

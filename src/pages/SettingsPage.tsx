@@ -1,10 +1,11 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Save, KeyRound, ShieldCheck, Loader2, Download, FileText, FileJson, Mail, User, Upload, LogOut, Bell, BellOff } from 'lucide-react';
+import { Save, KeyRound, ShieldCheck, Loader2, Download, FileText, FileJson, Mail, User, Upload, LogOut, Bell, BellOff, DollarSign } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useToast } from '../hooks/useToast';
 import { clearSmartRemindersLastSync, getSmartRemindersLastSync, isSmartRemindersEnabled, setSmartRemindersEnabled, SMART_REMINDERS_SYNCED_EVENT, syncSmartReminders, triggerSmartReminderSync } from '../lib/notifications';
 import { generateWithConfiguredProvider } from '../lib/aiClient';
 import { getActiveAIProvider, getApiKeyForProvider, getDefaultModels, getProviderLabel, setActiveAIProvider, setApiKeyForProvider, type AIProvider } from '../lib/aiConfig';
+import type { Workspace } from '../types';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- backup data is unstructured external JSON
 type BackupRecord = Record<string, any>;
@@ -40,6 +41,14 @@ export const SettingsPage: React.FC = () => {
   const [smartRemindersEnabled, setSmartRemindersEnabledState] = useState(true);
   const [syncingReminders, setSyncingReminders] = useState(false);
   const [lastReminderSync, setLastReminderSync] = useState<string | null>(null);
+  const [totalAssetValue, setTotalAssetValue] = useState<number | null>(null);
+  
+  // Workspaces
+  const [workspaces, setWorkspaces] = useState<(Workspace & { role?: string })[]>([]);
+  const [loadingWorkspaces, setLoadingWorkspaces] = useState(true);
+  const [joinWorkspaceId, setJoinWorkspaceId] = useState('');
+  const [joining, setJoining] = useState(false);
+
   const backupInputRef = useRef<HTMLInputElement>(null);
   const savedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const { addToast } = useToast();
@@ -64,9 +73,40 @@ export const SettingsPage: React.FC = () => {
       if (user?.email) {
         setAccountEmail(user.email);
       }
+      
+      // Load Workspaces
+      if (user) {
+        loadWorkspaces(user.id);
+      } else {
+        setLoadingWorkspaces(false);
+      }
     } finally {
       setLoadingAccount(false);
     }
+  };
+
+  const loadWorkspaces = async (userId: string) => {
+    setLoadingWorkspaces(true);
+    const { data, error } = await supabase.from('workspace_members')
+      .select(`
+        role,
+        workspace:workspaces (
+          id,
+          name,
+          owner_id,
+          created_at
+        )
+      `)
+      .eq('user_id', userId);
+
+    if (!error && data) {
+      const formatted = data.map((item: any) => ({
+        ...item.workspace,
+        role: item.role
+      }));
+      setWorkspaces(formatted);
+    }
+    setLoadingWorkspaces(false);
   };
 
   useEffect(() => {
@@ -77,6 +117,23 @@ export const SettingsPage: React.FC = () => {
     setLastReminderSync(getSmartRemindersLastSync());
 
     loadAccountState();
+
+    const loadAssetValue = async () => {
+      try {
+        const { data, error } = await supabase.from('items').select('purchase_price, quantity');
+        if (error) throw error;
+        let total = 0;
+        data?.forEach(item => {
+          if (item.purchase_price) {
+            total += Number(item.purchase_price) * (item.quantity || 1);
+          }
+        });
+        setTotalAssetValue(total);
+      } catch (e) {
+        console.error('Failed to load asset value', e);
+      }
+    };
+    loadAssetValue();
 
     const { data: authListener } = supabase.auth.onAuthStateChange(() => {
       loadAccountState();
@@ -163,6 +220,81 @@ export const SettingsPage: React.FC = () => {
       } else {
          setTestMessage(`Error: ${msg}`);
       }
+    }
+  };
+
+  const exportInsurancePDF = async () => {
+    try {
+      const { data: items, error } = await supabase
+        .from('items')
+        .select('name, category, purchase_date, purchase_price, quantity, condition')
+        .not('purchase_price', 'is', null)
+        .order('name');
+        
+      if (error) throw error;
+      if (!items || items.length === 0) {
+        addToast('No items with a purchase price found to export. Add prices to items first.', 'info');
+        return;
+      }
+      
+      const total = items.reduce((sum, item) => sum + (Number(item.purchase_price) * (item.quantity || 1)), 0);
+      
+      const printWindow = window.open('', '_blank');
+      if (!printWindow) return;
+      
+      const html = `
+        <html>
+          <head>
+            <title>Insurance Inventory Report</title>
+            <style>
+              body { font-family: system-ui, -apple-system, sans-serif; padding: 40px; color: #333; }
+              h1 { color: #111; border-bottom: 2px solid #eee; padding-bottom: 10px; margin-bottom: 5px; }
+              .meta { color: #666; font-size: 0.9em; margin-bottom: 30px; }
+              table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+              th, td { text-align: left; padding: 12px; border-bottom: 1px solid #ddd; font-size: 0.9em; }
+              th { background-color: #f8f9fa; font-weight: 600; color: #444; }
+              .total { font-size: 1.5rem; font-weight: bold; margin-top: 30px; text-align: right; color: #111; }
+              @media print { button { display: none; } }
+            </style>
+          </head>
+          <body>
+            <h1>Tool Inventory - Valuations</h1>
+            <div class="meta">Generated on ${new Date().toLocaleDateString()}</div>
+            <table>
+              <thead>
+                <tr>
+                  <th>Item Name</th>
+                  <th>Category</th>
+                  <th>Condition</th>
+                  <th>Purchase Date</th>
+                  <th>Qty</th>
+                  <th>Price</th>
+                  <th>Total</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${items.map(item => `
+                  <tr>
+                    <td><strong>${item.name || 'Unknown'}</strong></td>
+                    <td>${item.category || '-'}</td>
+                    <td>${item.condition || '-'}</td>
+                    <td>${item.purchase_date ? new Date(item.purchase_date).toLocaleDateString() : '-'}</td>
+                    <td>${item.quantity || 1}</td>
+                    <td>$${Number(item.purchase_price).toFixed(2)}</td>
+                    <td>$${(Number(item.purchase_price) * (item.quantity || 1)).toFixed(2)}</td>
+                  </tr>
+                `).join('')}
+              </tbody>
+            </table>
+            <div class="total">Total Insured Value: $${total.toFixed(2)}</div>
+            <script>window.print();</script>
+          </body>
+        </html>
+      `;
+      printWindow.document.write(html);
+      printWindow.document.close();
+    } catch (e) {
+      addToast('Failed to generate Insurance Report', 'error');
     }
   };
 
@@ -284,6 +416,45 @@ export const SettingsPage: React.FC = () => {
       addToast('Signed out. A fresh anonymous session will be created automatically.', 'success');
     } catch (error) {
       addToast('Failed to sign out: ' + (error as Error).message, 'error');
+    }
+  };
+
+  const handleJoinWorkspace = async () => {
+    const id = joinWorkspaceId.trim();
+    if (!id) {
+      addToast('Please enter a workspace ID.', 'info');
+      return;
+    }
+
+    setJoining(true);
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error('You must be signed in to join a workspace.');
+
+      // Check if workspace exists
+      const { data: wsData, error: wsError } = await supabase.from('workspaces').select('id, name').eq('id', id).single();
+      if (wsError || !wsData) throw new Error('Workspace not found or invalid ID.');
+
+      // Check if already a member
+      if (workspaces.some(w => w.id === id)) {
+        throw new Error('You are already a member of this workspace.');
+      }
+
+      // Join
+      const { error: joinError } = await supabase.from('workspace_members').insert({
+        workspace_id: id,
+        user_id: user.id,
+        role: 'member',
+      });
+      if (joinError) throw joinError;
+
+      addToast(`Successfully joined workspace: ${wsData.name}!`, 'success');
+      setJoinWorkspaceId('');
+      loadWorkspaces(user.id);
+    } catch (error) {
+      addToast('Failed to join workspace: ' + (error as Error).message, 'error');
+    } finally {
+      setJoining(false);
     }
   };
 
@@ -686,6 +857,81 @@ export const SettingsPage: React.FC = () => {
         </div>
       </div>
 
+      {/* Workspaces */}
+      <div className="rounded-xl border bg-card p-4 space-y-4 shadow-sm">
+        <div className="flex items-center justify-between text-sm font-medium">
+          <div className="flex items-center gap-2">
+            <User className="w-4 h-4 text-violet-500" />
+            Shared Workspaces
+          </div>
+        </div>
+        
+        <p className="text-xs text-muted-foreground">
+          Manage access to your data. Share your Workspace ID to let others view and modify your tool shed.
+        </p>
+
+        {loadingWorkspaces ? (
+           <div className="text-xs text-muted-foreground flex items-center gap-2">
+             <Loader2 className="w-4 h-4 animate-spin" /> Loading workspaces...
+           </div>
+        ) : workspaces.length === 0 ? (
+          <div className="text-xs text-muted-foreground">No workspaces found.</div>
+        ) : (
+          <div className="space-y-3">
+            {workspaces.map(ws => (
+              <div key={ws.id} className="p-3 bg-muted/50 border border-border/80 rounded-lg space-y-2">
+                <div className="flex items-center justify-between">
+                  <p className="text-sm font-semibold">{ws.name}</p>
+                  <span className="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded-full bg-violet-500/10 text-violet-600 dark:text-violet-400 border border-violet-500/20">
+                    {ws.role}
+                  </span>
+                </div>
+                
+                <div className="flex items-center gap-2 mt-1">
+                  <input 
+                    readOnly
+                    value={ws.id}
+                    className="flex-1 bg-background border border-border px-2 py-1 text-xs rounded-md text-muted-foreground outline-none font-mono"
+                  />
+                  <button 
+                    onClick={() => {
+                      navigator.clipboard.writeText(ws.id);
+                      addToast('Workspace ID copied to clipboard!', 'success');
+                    }}
+                    className="text-xs bg-primary text-primary-foreground px-3 py-1.5 rounded-md hover:bg-primary/90 transition-colors"
+                  >
+                    Copy invite ID
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        <div className="pt-3 border-t space-y-3">
+          <p className="text-xs font-semibold">Join a Workspace</p>
+          <div className="flex gap-2">
+            <input
+              type="text"
+              placeholder="Paste Workspace ID..."
+              value={joinWorkspaceId}
+              onChange={(e) => setJoinWorkspaceId(e.target.value)}
+              className="flex-1 bg-background border border-border px-3 py-2 text-sm rounded-lg outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary/40"
+            />
+            <button
+              onClick={handleJoinWorkspace}
+              disabled={joining || !joinWorkspaceId.trim() || isAnonymousUser}
+              className="px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors disabled:opacity-50 text-sm font-medium whitespace-nowrap"
+            >
+              {joining ? <Loader2 className="w-4 h-4 animate-spin mx-auto" /> : 'Join'}
+            </button>
+          </div>
+          {isAnonymousUser && (
+            <p className="text-[10px] text-destructive">You must be signed into an email account to join shared workspaces.</p>
+          )}
+        </div>
+      </div>
+
       {/* Smart Reminders */}
       <div className="rounded-xl border bg-card p-4 space-y-4 shadow-sm">
         <div className="flex items-center gap-2 text-sm font-medium">
@@ -719,6 +965,32 @@ export const SettingsPage: React.FC = () => {
         <p className="text-xs text-muted-foreground">
           Last sync: {lastReminderSync ? new Date(lastReminderSync).toLocaleString() : 'Never'}
         </p>
+      </div>
+
+      {/* Insurance & Valuation */}
+      <div className="rounded-xl border bg-card p-4 space-y-4 shadow-sm">
+        <div className="flex items-center gap-2 text-sm font-medium">
+          <ShieldCheck className="w-4 h-4 text-emerald-500" />
+          Insurance & Valuation
+        </div>
+        
+        <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-xl p-4 flex items-center justify-between">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-wider text-emerald-600 dark:text-emerald-400">Total Asset Value</p>
+            <p className="text-2xl font-bold text-foreground">
+              {totalAssetValue !== null ? `$${totalAssetValue.toFixed(2)}` : '...'}
+            </p>
+          </div>
+          <DollarSign className="w-8 h-8 text-emerald-500/50" />
+        </div>
+
+        <button
+          onClick={exportInsurancePDF}
+          className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-emerald-500 text-white rounded-lg hover:bg-emerald-600 transition-colors text-sm font-medium"
+        >
+          <FileText className="w-4 h-4" />
+          Generate Insurance Report (PDF)
+        </button>
       </div>
 
       {/* Export / Share */}

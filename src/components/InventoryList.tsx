@@ -178,7 +178,10 @@ export const InventoryList: React.FC = () => {
   };
 
   const handleSmartSearch = async () => {
-    if (!searchTerm.trim()) return;
+    if (!searchTerm.trim()) {
+      addToast('Please enter what you are looking for in the search bar first.', 'info');
+      return;
+    }
     setIsSmartSearching(true);
     try {
       const inventoryContext = items.map(i =>
@@ -489,7 +492,7 @@ export const InventoryList: React.FC = () => {
           </button>
           <button
             onClick={handleSmartSearch}
-            disabled={!searchTerm.trim() || isSmartSearching}
+            disabled={isSmartSearching}
             className="shrink-0 p-2.5 rounded-xl border bg-violet-500/5 border-violet-500/20 text-violet-600 dark:text-violet-400 hover:bg-violet-500/10 transition-colors disabled:opacity-40"
             title="AI Smart Search"
           >

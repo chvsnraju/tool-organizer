@@ -42,6 +42,9 @@ export interface Item {
   estimated_price?: string | null;
   manual_url?: string | null;
   video_url?: string | null;
+  purchase_date?: string | null;
+  purchase_price?: number | null;
+  receipt_image_url?: string | null;
 }
 
 export interface ShoppingListItem {
@@ -96,4 +99,19 @@ export interface MaintenanceReminder {
   is_recurring: boolean;
   created_at: string;
   user_id?: string;
+}
+
+export interface Workspace {
+  id: string;
+  created_at: string;
+  name: string;
+  owner_id: string;
+}
+
+export interface WorkspaceMember {
+  id: string;
+  workspace_id: string;
+  user_id: string;
+  role: 'owner' | 'admin' | 'member';
+  created_at: string;
 }
