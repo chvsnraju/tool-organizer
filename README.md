@@ -4,13 +4,14 @@ ToolShed AI is a smart tool organization and inventory management application de
 
 ## Features
 
-- **Inventory Management**: Track tools with details, photos, tags, and specifications.
-- **AI-Powered Scanning**: Use Google Gemini AI to identify tools from photos and automatically extract details.
-- **Lending Tracker**: Keep track of tools lent to friends or colleagues with return dates and reminders.
-- **Maintenance Scheduler**: Schedule recurring maintenance tasks and track service history.
-- **Location Management**: Organize tools by location (e.g., Garage, Basement) and specific containers.
-- **Shopping List**: Manage needed items and restock alerts.
-- **Mobile First**: Fully responsive design with a native Android app via Capacitor.
+- **Inventory Management**: Track tools with details, photos, tags, and automatically generated specifications.
+- **AI-Powered Scanning**: Use Google Gemini AI to identify tools from photos, extract details, and suggest categories without manual entry.
+- **AI Work Assistant**: Input project details (e.g., "Build a deck") to have the AI cross-reference required tools against your existing inventory and generate a smart shopping list for what's missing.
+- **Precision Image Cropping**: Built-in freeform image cropper to perfectly frame your tool photos before database upload.
+- **Lending Tracker**: Keep track of tools lent to friends or colleagues with borrowing histories, set return dates, and log notes.
+- **Maintenance Scheduler**: Schedule recurring maintenance tasks across your equipment and track service history.
+- **Location & Container Setup**: Organize tools hierarchically by Location (e.g., Garage) and specific Container (e.g., Red Toolbox).
+- **Mobile First**: Fully responsive design with a native offline-ready Android app via Capacitor, including native smartphone barcode scanning.
 
 ## Tech Stack
 
