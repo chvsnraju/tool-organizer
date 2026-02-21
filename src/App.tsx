@@ -1,13 +1,16 @@
 import { App as CapacitorApp } from '@capacitor/app';
+import { Browser } from '@capacitor/browser';
 import { BrowserRouter as Router, Routes, Route, Link, useLocation, useNavigate } from 'react-router-dom';
 import { Layout, Camera, Settings, Home, MapPin, ShoppingCart, ArrowLeftRight } from 'lucide-react';
-import { lazy, Suspense, useEffect } from 'react';
+import { lazy, Suspense, useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { StatusBar, Style } from '@capacitor/status-bar';
 import { Capacitor } from '@capacitor/core';
+import type { User } from '@supabase/supabase-js';
 import { supabase } from './lib/supabase';
 import { triggerSmartReminderSync } from './lib/notifications';
 import { InventoryList } from './components/InventoryList';
+import { LoginScreen } from './components/LoginScreen';
 import { ToastContainer } from './components/ui/Toast';
 import { ToastContext, useToastState } from './hooks/useToast';
 import { ErrorBoundary } from './components/ErrorBoundary';
@@ -39,20 +42,20 @@ const PageWrapper = ({ children }: { children: React.ReactNode }) => {
 function AppContent() {
   const location = useLocation();
   const navigate = useNavigate();
+  const [user, setUser] = useState<User | null>(null);
+  const [authLoading, setAuthLoading] = useState(true);
 
   useEffect(() => {
+    // Check for an existing session on mount
     supabase.auth.getSession().then(({ data: { session } }) => {
-      if (!session) {
-        supabase.auth.signInAnonymously();
-      } else {
-        triggerSmartReminderSync();
-      }
+      setUser(session?.user ?? null);
+      if (session) triggerSmartReminderSync();
+      setAuthLoading(false);
     });
 
     const authListener = supabase.auth.onAuthStateChange((_event, session) => {
-      if (session) {
-        triggerSmartReminderSync();
-      }
+      setUser(session?.user ?? null);
+      if (session) triggerSmartReminderSync();
     });
 
     // Configure status bar for native platforms
@@ -76,12 +79,62 @@ function AppContent() {
       }
     });
 
+    // Handle OAuth redirect from system browser
+    const urlOpenListener = CapacitorApp.addListener('appUrlOpen', async ({ url }: { url: string }) => {
+      if (url.startsWith('com.ics.toolorganizer://login-callback')) {
+        await Browser.close();
+        try {
+          const urlObj = new URL(url);
+
+          // PKCE flow: code in query params (?code=...)
+          const code = urlObj.searchParams.get('code');
+          if (code) {
+            const { error } = await supabase.auth.exchangeCodeForSession(code);
+            if (error) throw error;
+            return;
+          }
+
+          // Implicit flow: tokens in hash fragment (#access_token=...&refresh_token=...)
+          const hash = new URLSearchParams(urlObj.hash.replace(/^#/, ''));
+          const accessToken = hash.get('access_token');
+          const refreshToken = hash.get('refresh_token');
+          if (accessToken && refreshToken) {
+            const { error } = await supabase.auth.setSession({ access_token: accessToken, refresh_token: refreshToken });
+            if (error) throw error;
+            return;
+          }
+
+          throw new Error(`Unrecognised redirect format. Received: ${url.substring(0, 120)}`);
+        } catch (e) {
+          const msg = e instanceof Error ? e.message : 'Unknown error';
+          console.error('[OAuth] failed:', msg);
+          window.dispatchEvent(new CustomEvent('oauth-error', { detail: msg }));
+        }
+      }
+    });
+
     return () => {
       backListener.then((h) => h.remove());
       appStateListener.then((h) => h.remove());
+      urlOpenListener.then((h) => h.remove());
       authListener.data.subscription.unsubscribe();
     };
   }, [navigate]);
+
+  if (authLoading) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <svg className="w-8 h-8 animate-spin text-primary" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
+        </svg>
+      </div>
+    );
+  }
+
+  if (!user) {
+    return <LoginScreen />;
+  }
 
   const isActive = (path: string) => location.pathname === path;
 

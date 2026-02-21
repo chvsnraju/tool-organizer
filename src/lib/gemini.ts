@@ -19,6 +19,9 @@ export interface ToolAnalysis {
   manualUrl?: string;
   videoUrl?: string;
   imageUrl?: string;
+  requiresMaintenance?: boolean;
+  maintenanceTask?: string;
+  maintenanceIntervalDays?: number;
 }
 
 interface BarcodeLookupResult {
@@ -162,6 +165,9 @@ function validateToolAnalysis(raw: unknown): ToolAnalysis {
     manualUrl: typeof obj.manualUrl === 'string' ? obj.manualUrl : undefined,
     videoUrl: typeof obj.videoUrl === 'string' ? obj.videoUrl : undefined,
     imageUrl: typeof obj.imageUrl === 'string' ? obj.imageUrl : undefined,
+    requiresMaintenance: typeof obj.requiresMaintenance === 'boolean' ? obj.requiresMaintenance : undefined,
+    maintenanceTask: typeof obj.maintenanceTask === 'string' ? obj.maintenanceTask : undefined,
+    maintenanceIntervalDays: typeof obj.maintenanceIntervalDays === 'number' ? obj.maintenanceIntervalDays : undefined,
   };
 }
 
