@@ -26,7 +26,6 @@ export const ContainerSelector: React.FC<ContainerSelectorProps> = ({ value, onC
 
       if (data) {
         setOptions(
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
           data.map((c: any) => ({
             id: c.id,
             name: c.name,

@@ -19,9 +19,6 @@ export interface ToolAnalysis {
   manualUrl?: string;
   videoUrl?: string;
   imageUrl?: string;
-  requiresMaintenance?: boolean;
-  maintenanceIntervalDays?: number | null;
-  maintenanceTask?: string;
 }
 
 interface BarcodeLookupResult {
@@ -135,7 +132,6 @@ const hasStrongBarcodeMatch = (item: Record<string, unknown>, barcode: string): 
 function sanitizeForPrompt(text: string, maxLength = 2000): string {
   return text
     .slice(0, maxLength)
-    // eslint-disable-next-line no-control-regex
     .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g, '') // strip control chars (keep \n \r \t)
     .trim();
 }
@@ -166,9 +162,6 @@ function validateToolAnalysis(raw: unknown): ToolAnalysis {
     manualUrl: typeof obj.manualUrl === 'string' ? obj.manualUrl : undefined,
     videoUrl: typeof obj.videoUrl === 'string' ? obj.videoUrl : undefined,
     imageUrl: typeof obj.imageUrl === 'string' ? obj.imageUrl : undefined,
-    requiresMaintenance: typeof obj.requiresMaintenance === 'boolean' ? obj.requiresMaintenance : false,
-    maintenanceIntervalDays: typeof obj.maintenanceIntervalDays === 'number' ? obj.maintenanceIntervalDays : null,
-    maintenanceTask: typeof obj.maintenanceTask === 'string' ? obj.maintenanceTask : undefined,
   };
 }
 
@@ -178,7 +171,7 @@ function validateToolAnalysis(raw: unknown): ToolAnalysis {
  */
 function safeParseJSON<T>(text: string, fallback?: T): T {
   // Strip markdown code fences
-  const cleaned = text.replace(/```(?:json)?\s*/g, '').replace(/```\s*/g, '').trim();
+  let cleaned = text.replace(/```(?:json)?\s*/g, '').replace(/```\s*/g, '').trim();
 
   // Try direct parse first
   try {
@@ -409,10 +402,7 @@ export const analyzeImage = async (base64Image: string, userContext?: string): P
          "Material": "Steel"
       },
       "manualSearchQuery": "search query to find the product manual online (e.g. 'DeWalt DCD771 user manual PDF')",
-      "videoSearchQuery": "search query to find a how-to or review video (e.g. 'DeWalt DCD771 drill review tutorial')",
-      "requiresMaintenance": true/false,
-      "maintenanceIntervalDays": 180 (estimated days between routine maintenance, or null if none),
-      "maintenanceTask": "Identify primary maintenance needed (e.g. 'Change oil', 'Sharpen blade', 'Lubricate chain')"
+      "videoSearchQuery": "search query to find a how-to or review video (e.g. 'DeWalt DCD771 drill review tutorial')"
     }
   `;
 
@@ -453,10 +443,7 @@ export const analyzeBulkImage = async (base64Image: string, userContext?: string
         "estimatedPrice": "Estimated price range in USD",
         "specs": { "key": "value" },
         "manualSearchQuery": "search query to find the product manual",
-        "videoSearchQuery": "search query to find a how-to video",
-        "requiresMaintenance": true/false,
-        "maintenanceIntervalDays": 180,
-        "maintenanceTask": "Primary maintenance task"
+        "videoSearchQuery": "search query to find a how-to video"
       }
     ]
 
@@ -495,6 +482,9 @@ export const analyzeBarcode = async (
     lookedUp?.title || lookedUp?.brand || lookedUp?.description || lookedUp?.category
   );
 
+  const fallbackProductSearch = `https://www.google.com/search?q=${encodeURIComponent(`${barcode} product`)}`;
+  const fallbackManualSearch = `https://www.google.com/search?q=${encodeURIComponent(`${barcode} manual`)}`;
+  const fallbackVideoSearch = `https://www.youtube.com/results?search_query=${encodeURIComponent(`${barcode} review`)}`;
 
 
 
@@ -507,6 +497,25 @@ export const analyzeBarcode = async (
     } catch (e) {
       console.warn('Web search fallback lookup error:', e);
     }
+  }
+
+  if (!hasLookupSignal && !webSearchContext) {
+    return {
+      name: `Unknown Product (${barcode})`,
+      description: 'Barcode was detected, but product details could not be verified from lookup data. Please review and enter details manually.',
+      category: 'Uncategorized',
+      tags: ['barcode-scan', 'needs-review'],
+      estimatedPrice: undefined,
+      specs: {
+        Barcode: barcode,
+      },
+      productUrl: fallbackProductSearch,
+      manualUrl: fallbackManualSearch,
+      videoUrl: fallbackVideoSearch,
+      manualSearchQuery: `${barcode} manual`,
+      videoSearchQuery: `${barcode} review`,
+      imageUrl: undefined,
+    };
   }
 
   let prompt = `
@@ -522,11 +531,10 @@ export const analyzeBarcode = async (
 
     Task:
     1) Infer the product represented by this barcode using BARCODE LOOKUP DATA as the primary source.
-    2) If lookup data is missing, use WEB SEARCH CONTEXT to identify the product.
-    3) USE YOUR GOOGLE SEARCH CAPABILITY. You have access to Google Search. ALWAYS do a Google Search for the barcode value if the lookup data and web search context are weak or missing.
-    4) Do NOT invent a different product type/brand if all data is weak or ambiguous after searching.
-    5) Use image/context only to supplement fields, never to contradict lookup data.
-    6) Provide detailed specs when possible.
+    2) If lookup data is missing, use WEB SEARCH CONTEXT to identify the product. Look for repeated product names/brands in the search snippets.
+    3) Do NOT invent a different product type/brand if all data is weak or ambiguous.
+    4) Use image/context only to supplement fields, never to contradict lookup data.
+    5) Provide detailed specs when possible.
 
     Return JSON:
     {
@@ -545,10 +553,7 @@ export const analyzeBarcode = async (
       "videoUrl": "Direct tutorial/review URL when known, else a search URL",
       "imageUrl": "Direct main product image URL if known",
       "manualSearchQuery": "search query for manual",
-      "videoSearchQuery": "search query for tutorial/review",
-      "requiresMaintenance": true/false,
-      "maintenanceIntervalDays": 180,
-      "maintenanceTask": "Routine maintenance task description if applicable"
+      "videoSearchQuery": "search query for tutorial/review"
     }
   `;
 
@@ -629,10 +634,7 @@ export const analyzeBarcodeFromImage = async (
         "videoUrl": "Direct tutorial/review URL when known, else a search URL",
         "imageUrl": "Direct main product image URL if known",
         "manualSearchQuery": "search query for manual",
-        "videoSearchQuery": "search query for tutorial/review",
-        "requiresMaintenance": true,
-        "maintenanceIntervalDays": 60,
-        "maintenanceTask": "Example task"
+        "videoSearchQuery": "search query for tutorial/review"
       }
     }
   `;
@@ -660,10 +662,8 @@ export const analyzeBarcodeFromImage = async (
 
   const mergedAnalysis: ToolAnalysis = {
     ...analysis,
-    name: (analysis.name !== 'Unknown Item' && !analysis.name.startsWith('Unknown Product')) 
-      ? analysis.name : imageAnalysis.name,
-    description: (analysis.description && analysis.name !== 'Unknown Item' && !analysis.name.startsWith('Unknown Product'))
-      ? analysis.description : (imageAnalysis.description || analysis.description),
+    name: analysis.name !== 'Unknown Item' ? analysis.name : imageAnalysis.name,
+    description: analysis.description || imageAnalysis.description,
     category: analysis.category || imageAnalysis.category,
     tags: analysis.tags.length > 0 ? analysis.tags : imageAnalysis.tags,
     estimatedPrice: analysis.estimatedPrice || imageAnalysis.estimatedPrice,
@@ -671,9 +671,6 @@ export const analyzeBarcodeFromImage = async (
       ...(imageAnalysis.specs || {}),
       ...(analysis.specs || {}),
     },
-    requiresMaintenance: analysis.requiresMaintenance || imageAnalysis.requiresMaintenance,
-    maintenanceIntervalDays: analysis.maintenanceIntervalDays || imageAnalysis.maintenanceIntervalDays,
-    maintenanceTask: analysis.maintenanceTask || imageAnalysis.maintenanceTask,
   };
 
   return { barcode, analysis: mergedAnalysis };
