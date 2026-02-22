@@ -1,8 +1,9 @@
 import { App as CapacitorApp } from '@capacitor/app';
+import type { PluginListenerHandle } from '@capacitor/core';
 import { Browser } from '@capacitor/browser';
 import { BrowserRouter as Router, Routes, Route, Link, useLocation, useNavigate } from 'react-router-dom';
 import { Layout, Camera, Settings, Home, MapPin, ShoppingCart, ArrowLeftRight } from 'lucide-react';
-import { lazy, Suspense, useEffect, useState } from 'react';
+import { lazy, Suspense, useEffect, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { StatusBar, Style } from '@capacitor/status-bar';
 import { Capacitor } from '@capacitor/core';
@@ -45,6 +46,11 @@ function AppContent() {
   const [user, setUser] = useState<User | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
 
+  // Store listener handles in refs so they can be removed synchronously in cleanup
+  const backListenerRef = useRef<PluginListenerHandle | null>(null);
+  const appStateListenerRef = useRef<PluginListenerHandle | null>(null);
+  const urlOpenListenerRef = useRef<PluginListenerHandle | null>(null);
+
   useEffect(() => {
     // Check for an existing session on mount
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -64,23 +70,23 @@ function AppContent() {
       StatusBar.setStyle({ style: Style.Light });
     }
 
-    // Handle Hardware Back Button
-    const backListener = CapacitorApp.addListener('backButton', ({ canGoBack }: { canGoBack: boolean }) => {
+    // Handle Hardware Back Button — store handle in ref for synchronous cleanup
+    CapacitorApp.addListener('backButton', ({ canGoBack }: { canGoBack: boolean }) => {
       if (canGoBack) {
         navigate(-1);
       } else {
         CapacitorApp.exitApp();
       }
-    });
+    }).then(handle => { backListenerRef.current = handle; });
 
-    const appStateListener = CapacitorApp.addListener('appStateChange', ({ isActive }: { isActive: boolean }) => {
+    CapacitorApp.addListener('appStateChange', ({ isActive }: { isActive: boolean }) => {
       if (isActive) {
         triggerSmartReminderSync();
       }
-    });
+    }).then(handle => { appStateListenerRef.current = handle; });
 
     // Handle OAuth redirect from system browser
-    const urlOpenListener = CapacitorApp.addListener('appUrlOpen', async ({ url }: { url: string }) => {
+    CapacitorApp.addListener('appUrlOpen', async ({ url }: { url: string }) => {
       if (url.startsWith('com.ics.toolorganizer://login-callback')) {
         await Browser.close();
         try {
@@ -111,12 +117,13 @@ function AppContent() {
           window.dispatchEvent(new CustomEvent('oauth-error', { detail: msg }));
         }
       }
-    });
+    }).then(handle => { urlOpenListenerRef.current = handle; });
 
     return () => {
-      backListener.then((h) => h.remove());
-      appStateListener.then((h) => h.remove());
-      urlOpenListener.then((h) => h.remove());
+      // Remove listeners synchronously via stored refs
+      backListenerRef.current?.remove();
+      appStateListenerRef.current?.remove();
+      urlOpenListenerRef.current?.remove();
       authListener.data.subscription.unsubscribe();
     };
   }, [navigate]);

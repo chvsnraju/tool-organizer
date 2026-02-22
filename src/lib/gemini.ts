@@ -156,9 +156,20 @@ function validateToolAnalysis(raw: unknown): ToolAnalysis {
     category: typeof obj.category === 'string' ? obj.category : '',
     tags: Array.isArray(obj.tags) ? obj.tags.filter((t): t is string => typeof t === 'string') : [],
     estimatedPrice: typeof obj.estimatedPrice === 'string' ? obj.estimatedPrice : undefined,
-    specs: typeof obj.specs === 'object' && obj.specs !== null
-      ? obj.specs as Record<string, string | number | boolean>
-      : undefined,
+    specs: (() => {
+      if (typeof obj.specs !== 'object' || obj.specs === null || Array.isArray(obj.specs)) return undefined;
+      const raw = obj.specs as Record<string, unknown>;
+      const sanitized: Record<string, string | number | boolean> = {};
+      for (const [k, v] of Object.entries(raw)) {
+        if (typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean') {
+          sanitized[k] = v;
+        } else if (v !== null && v !== undefined) {
+          // Coerce nested values to string rather than silently dropping
+          sanitized[k] = String(v);
+        }
+      }
+      return Object.keys(sanitized).length > 0 ? sanitized : undefined;
+    })(),
     manualSearchQuery: typeof obj.manualSearchQuery === 'string' ? obj.manualSearchQuery : undefined,
     videoSearchQuery: typeof obj.videoSearchQuery === 'string' ? obj.videoSearchQuery : undefined,
     productUrl: typeof obj.productUrl === 'string' ? obj.productUrl : undefined,

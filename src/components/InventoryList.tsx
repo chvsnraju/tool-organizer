@@ -10,22 +10,25 @@ import type { Item } from '../types';
 import { useToast } from '../hooks/useToast';
 import { getListBatchSize } from '../lib/listPerformance';
 import { getCached, setCache } from '../lib/queryCache';
-import { motion, type Variants } from 'framer-motion';
+import { motion, useReducedMotion, type Variants } from 'framer-motion';
 
-const containerVariants: Variants = {
+// Reduced-motion-safe variants (stagger halved, no scale, shorter spring)
+const makeContainerVariants = (reducedMotion: boolean): Variants => ({
   hidden: { opacity: 0 },
   show: {
     opacity: 1,
     transition: {
-      staggerChildren: 0.05
-    }
-  }
-};
+      staggerChildren: reducedMotion ? 0 : 0.03,
+    },
+  },
+});
 
-const itemVariants: Variants = {
-  hidden: { opacity: 0, y: 20, scale: 0.95 },
-  show: { opacity: 1, y: 0, scale: 1, transition: { type: 'spring', stiffness: 300, damping: 24 } }
-};
+const makeItemVariants = (reducedMotion: boolean): Variants => ({
+  hidden: reducedMotion ? { opacity: 0 } : { opacity: 0, y: 12, scale: 0.97 },
+  show: reducedMotion
+    ? { opacity: 1, transition: { duration: 0.15 } }
+    : { opacity: 1, y: 0, scale: 1, transition: { type: 'spring', stiffness: 400, damping: 28 } },
+});
 
 interface DashboardStats {
   totalItems: number;
@@ -39,9 +42,20 @@ interface DashboardStats {
 
 const ITEMS_BATCH_SIZE = getListBatchSize('inventory');
 
+// Cache key for dashboard stats (TTL: 60s — stats are non-critical)
+const STATS_CACHE_KEY = 'inventory:stats';
+const STATS_CACHE_TTL = 60_000;
+
+// Cache for AI smart search results, keyed by query hash
+const smartSearchCache = new Map<string, { itemName: string; relevance: string; reason: string }[]>();
+
 export const InventoryList: React.FC = () => {
   const navigate = useNavigate();
   const { addToast } = useToast();
+  const prefersReducedMotion = useReducedMotion() ?? false;
+  const containerVariants = makeContainerVariants(prefersReducedMotion);
+  const itemVariants = makeItemVariants(prefersReducedMotion);
+
   const [items, setItems] = useState<Item[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -94,25 +108,36 @@ export const InventoryList: React.FC = () => {
   };
 
   const fetchStats = async () => {
+    // Serve from cache when available (60s TTL) — stats are non-critical
+    const cached = getCached<Pick<DashboardStats, 'totalLocations' | 'shoppingCount' | 'lentCount' | 'maintenanceDue'>>(
+      STATS_CACHE_KEY, STATS_CACHE_TTL
+    );
+    if (cached) {
+      setStats(prev => ({ ...prev, ...cached }));
+      return;
+    }
+
     try {
       const [locResult, shopResult, loanResult, maintResult] = await Promise.all([
         supabase.from('locations').select('id', { count: 'exact', head: true }),
         supabase.from('shopping_list').select('id', { count: 'exact', head: true }).eq('purchased', false),
         supabase.from('tool_loans').select('id', { count: 'exact', head: true }).is('returned_date', null),
-        supabase.from('maintenance_reminders').select('id, next_due'),
+        supabase.from('maintenance_reminders').select('id, next_due').lte('next_due', new Date().toISOString()),
       ]);
 
-      const dueCount = (maintResult.data || []).filter(r => r.next_due && new Date(r.next_due) <= new Date()).length;
+      const dueCount = (maintResult.data || []).length;
 
-      setStats(prev => ({
-        ...prev,
+      const statsUpdate = {
         totalLocations: locResult.count || 0,
         shoppingCount: shopResult.count || 0,
         lentCount: loanResult.count || 0,
         maintenanceDue: dueCount,
-      }));
-    } catch {
-      // Non-critical, ignore
+      };
+
+      setStats(prev => ({ ...prev, ...statsUpdate }));
+      setCache(STATS_CACHE_KEY, statsUpdate);
+    } catch (err) {
+      console.warn('[InventoryList] fetchStats failed:', err);
     }
   };
 
@@ -182,6 +207,15 @@ export const InventoryList: React.FC = () => {
       addToast('Please enter what you are looking for in the search bar first.', 'info');
       return;
     }
+
+    // Check AI search cache — keyed by normalized query
+    const cacheKey = searchTerm.trim().toLowerCase();
+    const cachedResult = smartSearchCache.get(cacheKey);
+    if (cachedResult) {
+      setSmartSearchResults(cachedResult);
+      return;
+    }
+
     setIsSmartSearching(true);
     try {
       const inventoryContext = items.map(i =>
@@ -190,11 +224,15 @@ export const InventoryList: React.FC = () => {
 
       const resultText = await smartSearch(searchTerm, inventoryContext);
       const parsed = JSON.parse(resultText);
-      setSmartSearchResults(parsed.matches || []);
-      if (parsed.matches?.length === 0 && parsed.suggestion) {
+      const matches = parsed.matches || [];
+      setSmartSearchResults(matches);
+      // Cache result for this query (lives for the session)
+      smartSearchCache.set(cacheKey, matches);
+      if (matches.length === 0 && parsed.suggestion) {
         addToast(parsed.suggestion, 'info');
       }
-    } catch {
+    } catch (err) {
+      console.warn('[InventoryList] smart search failed:', err);
       addToast('Smart search failed. Using local search.', 'info');
     } finally {
       setIsSmartSearching(false);
@@ -486,17 +524,18 @@ export const InventoryList: React.FC = () => {
             className={`shrink-0 p-2.5 rounded-xl border transition-colors ${
               isListening ? 'bg-red-500/10 border-red-500/30 text-red-500 animate-pulse' : 'bg-card border-border/60 text-muted-foreground hover:text-foreground'
             }`}
-            title="Voice search"
+            aria-label={isListening ? 'Stop voice search' : 'Start voice search'}
+            aria-pressed={isListening}
           >
-            {isListening ? <MicOff className="w-4 h-4" /> : <Mic className="w-4 h-4" />}
+            {isListening ? <MicOff className="w-4 h-4" aria-hidden="true" /> : <Mic className="w-4 h-4" aria-hidden="true" />}
           </button>
           <button
             onClick={handleSmartSearch}
             disabled={isSmartSearching}
             className="shrink-0 p-2.5 rounded-xl border bg-violet-500/5 border-violet-500/20 text-violet-600 dark:text-violet-400 hover:bg-violet-500/10 transition-colors disabled:opacity-40"
-            title="AI Smart Search"
+            aria-label="AI smart search"
           >
-            {isSmartSearching ? <Loader2 className="w-4 h-4 animate-spin" /> : <Brain className="w-4 h-4" />}
+            {isSmartSearching ? <Loader2 className="w-4 h-4 animate-spin" aria-hidden="true" /> : <Brain className="w-4 h-4" aria-hidden="true" />}
           </button>
         </div>
 
@@ -527,18 +566,20 @@ export const InventoryList: React.FC = () => {
           {/* Favorites toggle */}
           <button
             onClick={() => setShowFavoritesOnly(!showFavoritesOnly)}
+            aria-pressed={showFavoritesOnly}
             className={`shrink-0 px-3.5 py-1.5 rounded-full text-[11px] font-medium transition-all flex items-center gap-1 ${
               showFavoritesOnly
                 ? 'bg-amber-500/20 text-amber-600 dark:text-amber-400 border border-amber-500/30'
                 : 'bg-card text-muted-foreground border border-border/60 hover:border-amber-500/40'
             }`}
           >
-            <Star className={`w-3 h-3 ${showFavoritesOnly ? 'fill-current' : ''}`} /> Favorites
+            <Star className={`w-3 h-3 ${showFavoritesOnly ? 'fill-current' : ''}`} aria-hidden="true" /> Favorites
           </button>
 
           {/* Category Pills */}
           <button
             onClick={() => setCategoryFilter(null)}
+            aria-pressed={!categoryFilter && !showFavoritesOnly}
             className={`shrink-0 px-3.5 py-1.5 rounded-full text-[11px] font-medium transition-all ${
               !categoryFilter && !showFavoritesOnly
                 ? 'bg-primary text-primary-foreground shadow-sm'
@@ -551,6 +592,7 @@ export const InventoryList: React.FC = () => {
             <button
               key={cat}
               onClick={() => setCategoryFilter(categoryFilter === cat ? null : cat)}
+              aria-pressed={categoryFilter === cat}
               className={`shrink-0 px-3.5 py-1.5 rounded-full text-[11px] font-medium transition-all ${
                 categoryFilter === cat
                   ? 'bg-primary text-primary-foreground shadow-sm'
@@ -672,8 +714,8 @@ export const InventoryList: React.FC = () => {
                 variants={itemVariants}
                 key={item.id}
                 className="group text-left rounded-2xl overflow-hidden bg-white dark:bg-card border border-border/40 shadow-sm hover:shadow-md hover:border-primary/20 transition-all duration-300 flex flex-col relative"
-                whileHover={{ y: -4, boxShadow: "0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1)" }}
-                whileTap={{ scale: 0.96 }}
+                whileHover={prefersReducedMotion ? undefined : { y: -4, boxShadow: "0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1)" }}
+                whileTap={prefersReducedMotion ? undefined : { scale: 0.96 }}
                 onClick={() => navigate(`/items/${item.id}`)}
                 style={{ contentVisibility: 'auto', containIntrinsicSize: '280px' }}
               >

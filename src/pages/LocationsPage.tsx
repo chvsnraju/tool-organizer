@@ -156,16 +156,24 @@ export const LocationsPage: React.FC = () => {
     if (!deleteTarget) return;
     setDeleting(true);
 
+    // Optimistic: remove immediately
+    const targetId = deleteTarget.id;
+    const previousLocations = locations;
+    setLocations(prev => prev.filter(l => l.id !== targetId));
+    setShowDeleteConfirm(false);
+    setDeleteTarget(null);
+
     try {
-      const { error } = await supabase.from('locations').delete().eq('id', deleteTarget.id);
+      const { error } = await supabase.from('locations').delete().eq('id', targetId);
       if (error) throw error;
 
       invalidateCache('locations:');
       addToast('Location deleted', 'success');
-      setShowDeleteConfirm(false);
-      setDeleteTarget(null);
-      fetchLocations();
     } catch {
+      // Revert optimistic update on failure
+      setLocations(previousLocations);
+      setShowDeleteConfirm(true);
+      setDeleteTarget(previousLocations.find(l => l.id === targetId) ?? null);
       addToast('Error deleting location', 'error');
     } finally {
       setDeleting(false);
@@ -175,6 +183,8 @@ export const LocationsPage: React.FC = () => {
   const handleSubmit = async () => {
     if (!locName.trim()) return;
     setIsSubmitting(true);
+
+    const previousLocations = locations;
 
     try {
       const { data: { user } } = await supabase.auth.getUser();
@@ -192,6 +202,16 @@ export const LocationsPage: React.FC = () => {
       };
 
       if (editingId) {
+        // Optimistic: apply name/desc/image change immediately
+        setLocations(prev =>
+          prev.map(l =>
+            l.id === editingId
+              ? { ...l, name: locName, description: locDesc, image_url: imageUrl ?? l.image_url }
+              : l
+          )
+        );
+        resetForm();
+
         const { error } = await supabase
           .from('locations')
           .update(payload)
@@ -199,20 +219,25 @@ export const LocationsPage: React.FC = () => {
         if (error) throw error;
         addToast('Location updated', 'success');
       } else {
-        const { error } = await supabase
+        resetForm();
+
+        const { data: inserted, error } = await supabase
           .from('locations')
-          .insert({
-            ...payload,
-            user_id: user.id,
-          });
+          .insert({ ...payload, user_id: user.id })
+          .select('*')
+          .single();
         if (error) throw error;
+        // Append the real row returned by the server
+        if (inserted) {
+          setLocations(prev => [...prev, { ...(inserted as LocationWithCounts), container_count: 0, item_count: 0 }]);
+        }
         addToast('Location created', 'success');
       }
 
       invalidateCache('locations:');
-      resetForm();
-      fetchLocations();
     } catch (e) {
+      // Revert optimistic update on failure
+      setLocations(previousLocations);
       addToast('Error saving location: ' + (e as Error).message, 'error');
     } finally {
       setIsSubmitting(false);

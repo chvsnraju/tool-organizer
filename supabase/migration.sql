@@ -60,6 +60,25 @@ CREATE INDEX IF NOT EXISTS idx_containers_user_id ON containers(user_id);
 CREATE INDEX IF NOT EXISTS idx_locations_user_id ON locations(user_id);
 CREATE INDEX IF NOT EXISTS idx_shopping_list_user_id ON shopping_list(user_id);
 
+-- Performance indexes for frequently-filtered queries
+-- items filtered by location_id (ContainersPage query)
+CREATE INDEX IF NOT EXISTS idx_items_location_id ON items(location_id);
+
+-- Partial index: only active (unreturned) tool loans — matches IS NULL filter
+CREATE INDEX IF NOT EXISTS idx_tool_loans_active
+  ON tool_loans(id)
+  WHERE returned_date IS NULL;
+
+-- Partial index: only unpurchased shopping list items — matches purchased = false filter
+CREATE INDEX IF NOT EXISTS idx_shopping_list_unpurchased
+  ON shopping_list(id)
+  WHERE purchased = false;
+
+-- Partial index: only upcoming maintenance reminders — matches next_due <= now() filter
+CREATE INDEX IF NOT EXISTS idx_maintenance_reminders_due
+  ON maintenance_reminders(next_due)
+  WHERE next_due IS NOT NULL;
+
 -- Storage buckets (uncomment and run if not already created)
 -- INSERT INTO storage.buckets (id, name, public) VALUES ('items', 'items', true) ON CONFLICT DO NOTHING;
 -- INSERT INTO storage.buckets (id, name, public) VALUES ('containers', 'containers', true) ON CONFLICT DO NOTHING;

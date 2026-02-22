@@ -4,6 +4,7 @@ import { ArrowLeft, Package, Camera, MapPin, Search, X, ChevronUp, Loader2, QrCo
 import { supabase } from '../lib/supabase';
 import { useToast } from '../hooks/useToast';
 import { getListBatchSize } from '../lib/listPerformance';
+import { getCached, setCache } from '../lib/queryCache';
 import { PrintableQRCode } from '../components/PrintableQRCode';
 import type { Location, Item } from '../types';
 
@@ -26,26 +27,33 @@ export const ContainersPage: React.FC = () => {
     const fetchData = async () => {
       if (!locationId) return;
 
+      const locCacheKey = `location:${locationId}`;
+      const itemsCacheKey = `location:${locationId}:items`;
+
+      // Serve from cache while fetching fresh data in background
+      const cachedLoc = getCached<Location>(locCacheKey);
+      const cachedItems = getCached<Item[]>(itemsCacheKey);
+      if (cachedLoc && cachedItems) {
+        setLocation(cachedLoc);
+        setItems(cachedItems);
+        setLoading(false);
+      }
+
       try {
-        const { data: locData, error: locError } = await supabase
-          .from('locations')
-          .select('*')
-          .eq('id', locationId)
-          .single();
+        const [locResult, itemsResult] = await Promise.all([
+          supabase.from('locations').select('*').eq('id', locationId).single(),
+          supabase.from('items').select('*').eq('location_id', locationId).order('created_at', { ascending: false }),
+        ]);
 
-        if (locError) throw locError;
-        setLocation(locData);
+        if (locResult.error) throw locResult.error;
+        if (itemsResult.error) throw itemsResult.error;
 
-        const { data: itemData, error: itemError } = await supabase
-          .from('items')
-          .select('*')
-          .eq('location_id', locationId)
-          .order('created_at', { ascending: false });
-
-        if (itemError) throw itemError;
-        setItems(itemData || []);
+        setLocation(locResult.data);
+        setItems(itemsResult.data || []);
+        setCache(locCacheKey, locResult.data);
+        setCache(itemsCacheKey, itemsResult.data || []);
       } catch (e) {
-        addToast('Error loading location data: ' + (e as Error).message, 'error');
+        if (!cachedLoc) addToast('Error loading location data: ' + (e as Error).message, 'error');
       } finally {
         setLoading(false);
       }
