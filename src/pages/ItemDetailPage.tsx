@@ -1,16 +1,18 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import {
   Loader2, ArrowLeft, MapPin, Edit3, Trash2, ChevronLeft, ChevronRight,
   Star, Wrench, ArrowLeftRight, ExternalLink, BookOpen, Play,
-  Package, DollarSign, AlertCircle, Tag, Hash, X, FileText, Calendar, QrCode
+  Package, DollarSign, AlertCircle, Tag, Hash, X, FileText, Calendar, QrCode,
+  Clock, Upload, StickyNote, Plus, CheckCircle2
 } from 'lucide-react';
 import { EditItemModal } from '../components/EditItemModal';
 import { useToast } from '../hooks/useToast';
 import { triggerSmartReminderSync } from '../lib/notifications';
+import { uploadImage } from '../lib/storage';
 import { PrintableQRCode } from '../components/PrintableQRCode';
-import { type Item, type ItemCondition, type ToolLoan, CONDITION_LABELS, CONDITION_COLORS } from '../types';
+import { type Item, type ItemCondition, type ToolLoan, type ItemNote, CONDITION_LABELS, CONDITION_COLORS } from '../types';
 
 export const ItemDetailPage: React.FC = () => {
   const { itemId: id } = useParams();
@@ -46,6 +48,20 @@ export const ItemDetailPage: React.FC = () => {
   const [maintTask, setMaintTask] = useState('');
   const [maintNextDue, setMaintNextDue] = useState('');
 
+  // Receipt upload
+  const receiptInputRef = useRef<HTMLInputElement>(null);
+  const [uploadingReceipt, setUploadingReceipt] = useState(false);
+
+  // Usage tracking
+  const [loggingUsage, setLoggingUsage] = useState(false);
+
+  // Service notes
+  const [notes, setNotes] = useState<ItemNote[]>([]);
+  const [notesLoading, setNotesLoading] = useState(false);
+  const [showNoteForm, setShowNoteForm] = useState(false);
+  const [newNoteText, setNewNoteText] = useState('');
+  const [savingNote, setSavingNote] = useState(false);
+
   const fetchItem = async () => {
     if (!id) return;
     try {
@@ -72,10 +88,95 @@ export const ItemDetailPage: React.FC = () => {
         .is('returned_date', null)
         .maybeSingle();
       setActiveLoan(loan);
+
+      // Fetch service notes
+      setNotesLoading(true);
+      const { data: notesData } = await supabase
+        .from('item_notes')
+        .select('*')
+        .eq('item_id', id)
+        .order('created_at', { ascending: false });
+      setNotes((notesData as ItemNote[]) || []);
+      setNotesLoading(false);
     } catch (err) {
       addToast('Error loading item: ' + (err as Error).message, 'error');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleReceiptUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !item) return;
+    setUploadingReceipt(true);
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error('Not authenticated');
+
+      const reader = new FileReader();
+      const base64 = await new Promise<string>((resolve, reject) => {
+        reader.onload = () => resolve(reader.result as string);
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      });
+
+      const url = await uploadImage(base64, 'receipts', user.id);
+      const { error } = await supabase.from('items').update({ receipt_image_url: url }).eq('id', item.id);
+      if (error) throw error;
+      setItem({ ...item, receipt_image_url: url });
+      addToast('Receipt uploaded!', 'success');
+    } catch (err) {
+      addToast('Upload failed: ' + (err as Error).message, 'error');
+    } finally {
+      setUploadingReceipt(false);
+      if (receiptInputRef.current) receiptInputRef.current.value = '';
+    }
+  };
+
+  const handleLogUsage = async () => {
+    if (!item) return;
+    setLoggingUsage(true);
+    try {
+      const now = new Date().toISOString();
+      const { error } = await supabase.from('items').update({ last_used_at: now }).eq('id', item.id);
+      if (error) throw error;
+      setItem({ ...item, last_used_at: now });
+      addToast('Usage logged!', 'success');
+    } catch (err) {
+      addToast('Failed to log usage: ' + (err as Error).message, 'error');
+    } finally {
+      setLoggingUsage(false);
+    }
+  };
+
+  const handleAddNote = async () => {
+    if (!item || !newNoteText.trim()) return;
+    setSavingNote(true);
+    try {
+      const { data, error } = await supabase
+        .from('item_notes')
+        .insert({ item_id: item.id, note_text: newNoteText.trim() })
+        .select('*')
+        .single();
+      if (error) throw error;
+      setNotes(prev => [data as ItemNote, ...prev]);
+      setNewNoteText('');
+      setShowNoteForm(false);
+      addToast('Note added!', 'success');
+    } catch (err) {
+      addToast('Failed to add note: ' + (err as Error).message, 'error');
+    } finally {
+      setSavingNote(false);
+    }
+  };
+
+  const handleDeleteNote = async (noteId: string) => {
+    try {
+      const { error } = await supabase.from('item_notes').delete().eq('id', noteId);
+      if (error) throw error;
+      setNotes(prev => prev.filter(n => n.id !== noteId));
+    } catch (err) {
+      addToast('Failed to delete note: ' + (err as Error).message, 'error');
     }
   };
 
@@ -358,7 +459,30 @@ export const ItemDetailPage: React.FC = () => {
               <span className="text-sm font-medium text-emerald-600 dark:text-emerald-400">{item.estimated_price}</span>
             </div>
           )}
+          {item.last_used_at && (
+            <div className="shrink-0 flex items-center gap-2 px-3 py-2 bg-card border border-border/40 rounded-xl">
+              <Clock className="w-4 h-4 text-muted-foreground shrink-0" />
+              <span className="text-sm font-medium text-muted-foreground">
+                {(() => {
+                  const days = Math.floor((Date.now() - new Date(item.last_used_at!).getTime()) / 86400000);
+                  if (days === 0) return 'Used today';
+                  if (days === 1) return 'Used yesterday';
+                  return `Used ${days}d ago`;
+                })()}
+              </span>
+            </div>
+          )}
         </div>
+
+        {/* Log Usage button */}
+        <button
+          onClick={handleLogUsage}
+          disabled={loggingUsage}
+          className="flex items-center gap-2 px-4 py-2 bg-blue-500/5 border border-blue-500/20 rounded-xl text-sm font-medium text-blue-600 dark:text-blue-400 hover:bg-blue-500/10 transition-colors disabled:opacity-50 self-start"
+        >
+          {loggingUsage ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
+          Log Usage
+        </button>
 
         {/* Description */}
         {item.description && (
@@ -368,12 +492,12 @@ export const ItemDetailPage: React.FC = () => {
           </div>
         )}
 
-        {/* Purchase Info */}
-        {(item.purchase_date || item.purchase_price || item.receipt_image_url) && (
-          <div className="bg-muted/30 border border-border/40 rounded-xl p-4 space-y-3">
-            <h3 className="text-xs font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
-              <FileText className="w-3.5 h-3.5" /> Purchase & Insurance
-            </h3>
+        {/* Purchase & Insurance */}
+        <div className="bg-muted/30 border border-border/40 rounded-xl p-4 space-y-3">
+          <h3 className="text-xs font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+            <FileText className="w-3.5 h-3.5" /> Purchase & Insurance
+          </h3>
+          {(item.purchase_date || item.purchase_price) && (
             <div className="flex flex-wrap gap-4">
               {item.purchase_date && (
                 <div className="flex items-center gap-2">
@@ -388,13 +512,40 @@ export const ItemDetailPage: React.FC = () => {
                 </div>
               )}
             </div>
-            {item.receipt_image_url && (
-              <a href={item.receipt_image_url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-2 px-3 py-2 bg-card border border-border/50 rounded-lg text-xs font-medium hover:border-primary/30 transition-colors">
+          )}
+          <div className="flex gap-2">
+            {item.receipt_image_url ? (
+              <a
+                href={item.receipt_image_url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-2 px-3 py-2 bg-card border border-border/50 rounded-lg text-xs font-medium hover:border-primary/30 transition-colors"
+              >
                 <FileText className="w-4 h-4" /> View Receipt
               </a>
-            )}
+            ) : null}
+            <button
+              onClick={() => receiptInputRef.current?.click()}
+              disabled={uploadingReceipt}
+              className="inline-flex items-center gap-2 px-3 py-2 bg-card border border-border/50 rounded-lg text-xs font-medium hover:border-primary/30 transition-colors disabled:opacity-50"
+            >
+              {uploadingReceipt ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
+              {item.receipt_image_url ? 'Replace Receipt' : 'Upload Receipt'}
+            </button>
           </div>
-        )}
+          <input
+            ref={receiptInputRef}
+            type="file"
+            accept="image/*"
+            className="hidden"
+            onChange={handleReceiptUpload}
+          />
+          {!item.purchase_date && !item.purchase_price && !item.receipt_image_url && (
+            <p className="text-xs text-muted-foreground">
+              Edit this item to add a purchase date and price for insurance tracking.
+            </p>
+          )}
+        </div>
 
         {/* Tags */}
         {item.tags && item.tags.length > 0 && (
@@ -597,6 +748,96 @@ export const ItemDetailPage: React.FC = () => {
             >
               <Wrench className="w-4 h-4" /> Add maintenance reminder
             </button>
+          )}
+        </div>
+
+        {/* Service History / Notes */}
+        <div className="border-t border-border/40 pt-4 space-y-3">
+          <div className="flex items-center justify-between">
+            <h3 className="text-xs font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-2">
+              <StickyNote className="w-3.5 h-3.5" /> Service History
+            </h3>
+            <button
+              onClick={() => setShowNoteForm(v => !v)}
+              className="flex items-center gap-1.5 text-xs text-primary font-medium hover:underline"
+            >
+              <Plus className="w-3.5 h-3.5" /> Add Note
+            </button>
+          </div>
+
+          {showNoteForm && (
+            <div className="bg-card border border-border/40 rounded-xl p-4 space-y-3">
+              <textarea
+                value={newNoteText}
+                onChange={e => setNewNoteText(e.target.value)}
+                placeholder="e.g. Replaced blade, Serviced motor, Fixed handle..."
+                rows={3}
+                className="w-full bg-muted/30 border border-border p-2.5 rounded-xl text-sm outline-none resize-none"
+              />
+              <div className="flex gap-2">
+                <button
+                  onClick={handleAddNote}
+                  disabled={!newNoteText.trim() || savingNote}
+                  className="px-4 py-2 bg-primary text-primary-foreground rounded-lg text-xs font-medium disabled:opacity-50 flex items-center gap-2"
+                >
+                  {savingNote ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+                  Save Note
+                </button>
+                <button
+                  onClick={() => { setShowNoteForm(false); setNewNoteText(''); }}
+                  className="px-4 py-2 bg-muted text-muted-foreground rounded-lg text-xs font-medium"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          )}
+
+          {notesLoading ? (
+            <div className="flex items-center gap-2 text-xs text-muted-foreground">
+              <Loader2 className="w-3.5 h-3.5 animate-spin" /> Loading notes...
+            </div>
+          ) : (
+            <div className="relative">
+              {/* Timeline */}
+              {notes.length > 0 && (
+                <div className="absolute left-[7px] top-2 bottom-2 w-px bg-border/60" />
+              )}
+              <div className="space-y-3">
+                {/* Item added entry */}
+                <div className="flex gap-3">
+                  <div className="w-3.5 h-3.5 rounded-full bg-primary/20 border-2 border-primary/40 shrink-0 mt-0.5 z-10" />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs font-medium text-foreground/70">Item added to inventory</p>
+                    <p className="text-[10px] text-muted-foreground mt-0.5">
+                      {new Date(item.created_at).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })}
+                    </p>
+                  </div>
+                </div>
+                {notes.map(note => (
+                  <div key={note.id} className="flex gap-3 group">
+                    <div className="w-3.5 h-3.5 rounded-full bg-blue-500/20 border-2 border-blue-500/40 shrink-0 mt-0.5 z-10" />
+                    <div className="flex-1 min-w-0 bg-card border border-border/40 rounded-xl p-3 shadow-sm">
+                      <div className="flex items-start justify-between gap-2">
+                        <p className="text-sm text-foreground/80 leading-relaxed flex-1">{note.note_text}</p>
+                        <button
+                          onClick={() => handleDeleteNote(note.id)}
+                          className="opacity-0 group-hover:opacity-100 p-0.5 rounded hover:bg-destructive/10 text-muted-foreground hover:text-destructive transition-all shrink-0"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                      <p className="text-[10px] text-muted-foreground mt-1.5">
+                        {new Date(note.created_at).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                      </p>
+                    </div>
+                  </div>
+                ))}
+                {notes.length === 0 && (
+                  <p className="text-xs text-muted-foreground ml-6">No service notes yet. Add one to track repairs, maintenance, or usage history.</p>
+                )}
+              </div>
+            </div>
           )}
         </div>
 

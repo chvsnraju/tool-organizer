@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { supabase } from '../lib/supabase';
-import { Loader2, Plus, X, Wrench, CheckCircle2, AlertCircle, Calendar, RotateCcw } from 'lucide-react';
+import { Loader2, Plus, X, Wrench, CheckCircle2, AlertCircle, Calendar, RotateCcw, ChevronLeft, ChevronRight, List } from 'lucide-react';
 import { useToast } from '../hooks/useToast';
 import { triggerSmartReminderSync } from '../lib/notifications';
 import { getListBatchSize } from '../lib/listPerformance';
@@ -25,6 +25,11 @@ export const MaintenancePage: React.FC = () => {
   const [visibleDueCount, setVisibleDueCount] = useState(MAINTENANCE_BATCH_SIZE);
   const [visibleUpcomingCount, setVisibleUpcomingCount] = useState(MAINTENANCE_BATCH_SIZE);
   const [visibleOtherCount, setVisibleOtherCount] = useState(MAINTENANCE_BATCH_SIZE);
+
+  // Calendar view
+  const [viewMode, setViewMode] = useState<'list' | 'calendar'>('list');
+  const [calendarMonth, setCalendarMonth] = useState(() => new Date());
+  const [selectedCalendarDay, setSelectedCalendarDay] = useState<string | null>(null);
   const loadMoreDueRef = useRef<HTMLDivElement | null>(null);
   const loadMoreUpcomingRef = useRef<HTMLDivElement | null>(null);
   const loadMoreOtherRef = useRef<HTMLDivElement | null>(null);
@@ -210,6 +215,46 @@ export const MaintenancePage: React.FC = () => {
     return () => observer.disconnect();
   }, [otherReminders.length, visibleOtherCount]);
 
+  const calendarDays = useMemo(() => {
+    const year = calendarMonth.getFullYear();
+    const month = calendarMonth.getMonth();
+    const firstDayOfWeek = new Date(year, month, 1).getDay();
+    const daysInMonth = new Date(year, month + 1, 0).getDate();
+
+    const remindersByDate = new Map<string, MaintenanceReminder[]>();
+    reminders.forEach(r => {
+      if (r.next_due) {
+        const key = r.next_due.split('T')[0];
+        if (!remindersByDate.has(key)) remindersByDate.set(key, []);
+        remindersByDate.get(key)!.push(r);
+      }
+    });
+
+    const today = new Date().toISOString().split('T')[0];
+    const days: Array<{ date: number; dateStr: string; reminders: MaintenanceReminder[]; isToday: boolean; isPast: boolean } | null> = [];
+
+    for (let i = 0; i < firstDayOfWeek; i++) days.push(null);
+
+    for (let d = 1; d <= daysInMonth; d++) {
+      const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+      days.push({
+        date: d,
+        dateStr,
+        reminders: remindersByDate.get(dateStr) || [],
+        isToday: dateStr === today,
+        isPast: dateStr < today,
+      });
+    }
+    return days;
+  }, [calendarMonth, reminders]);
+
+  const selectedDayReminders = useMemo(
+    () => selectedCalendarDay
+      ? calendarDays.find(d => d?.dateStr === selectedCalendarDay)?.reminders || []
+      : [],
+    [calendarDays, selectedCalendarDay]
+  );
+
   const visibleDueReminders = useMemo(
     () => dueReminders.slice(0, visibleDueCount),
     [dueReminders, visibleDueCount]
@@ -240,12 +285,31 @@ export const MaintenancePage: React.FC = () => {
           <h2 className="text-2xl font-bold">Maintenance</h2>
           <p className="text-sm text-muted-foreground">Track tool maintenance schedules</p>
         </div>
-        <button
-          onClick={() => setShowForm(!showForm)}
-          className="p-2.5 bg-primary text-primary-foreground rounded-xl shadow-lg shadow-primary/25 hover:bg-primary/90 transition-all"
-        >
-          {showForm ? <X className="w-5 h-5" /> : <Plus className="w-5 h-5" />}
-        </button>
+        <div className="flex items-center gap-2">
+          {/* View Mode Toggle */}
+          <div className="flex rounded-xl border border-border/60 overflow-hidden">
+            <button
+              onClick={() => setViewMode('list')}
+              className={`p-2 transition-colors ${viewMode === 'list' ? 'bg-primary text-primary-foreground' : 'bg-card text-muted-foreground hover:text-foreground'}`}
+              title="List view"
+            >
+              <List className="w-4 h-4" />
+            </button>
+            <button
+              onClick={() => setViewMode('calendar')}
+              className={`p-2 transition-colors ${viewMode === 'calendar' ? 'bg-primary text-primary-foreground' : 'bg-card text-muted-foreground hover:text-foreground'}`}
+              title="Calendar view"
+            >
+              <Calendar className="w-4 h-4" />
+            </button>
+          </div>
+          <button
+            onClick={() => setShowForm(!showForm)}
+            className="p-2.5 bg-primary text-primary-foreground rounded-xl shadow-lg shadow-primary/25 hover:bg-primary/90 transition-all"
+          >
+            {showForm ? <X className="w-5 h-5" /> : <Plus className="w-5 h-5" />}
+          </button>
+        </div>
       </div>
 
       {/* Add Form */}
@@ -320,6 +384,139 @@ export const MaintenancePage: React.FC = () => {
         </div>
       )}
 
+      {/* Calendar View */}
+      {viewMode === 'calendar' && (
+        <div className="bg-card border border-border/40 rounded-2xl p-4 space-y-4">
+          {/* Month Navigation */}
+          <div className="flex items-center justify-between">
+            <button
+              onClick={() => {
+                const d = new Date(calendarMonth.getFullYear(), calendarMonth.getMonth() - 1, 1);
+                setCalendarMonth(d);
+                setSelectedCalendarDay(null);
+              }}
+              className="p-2 rounded-xl hover:bg-secondary transition-colors"
+            >
+              <ChevronLeft className="w-4 h-4" />
+            </button>
+            <span className="font-semibold text-sm">
+              {calendarMonth.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
+            </span>
+            <button
+              onClick={() => {
+                const d = new Date(calendarMonth.getFullYear(), calendarMonth.getMonth() + 1, 1);
+                setCalendarMonth(d);
+                setSelectedCalendarDay(null);
+              }}
+              className="p-2 rounded-xl hover:bg-secondary transition-colors"
+            >
+              <ChevronRight className="w-4 h-4" />
+            </button>
+          </div>
+
+          {/* Day-of-week headers */}
+          <div className="grid grid-cols-7 gap-1">
+            {['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((d, i) => (
+              <div key={i} className="text-center text-[10px] font-bold text-muted-foreground py-1">{d}</div>
+            ))}
+          </div>
+
+          {/* Day cells */}
+          <div className="grid grid-cols-7 gap-1">
+            {calendarDays.map((day, i) => (
+              <button
+                key={i}
+                disabled={!day}
+                onClick={() => day && setSelectedCalendarDay(
+                  selectedCalendarDay === day.dateStr ? null : day.dateStr
+                )}
+                className={`aspect-square rounded-lg flex flex-col items-center justify-center text-xs transition-colors relative ${
+                  !day ? '' :
+                  selectedCalendarDay === day.dateStr
+                    ? 'bg-primary text-primary-foreground'
+                    : day.isToday
+                      ? 'bg-primary/15 text-primary font-bold ring-1 ring-primary/30'
+                      : day.reminders.length > 0
+                        ? day.isPast
+                          ? 'bg-red-500/10 text-red-600 border border-red-200 dark:border-red-900 cursor-pointer hover:bg-red-500/20'
+                          : 'bg-amber-500/10 text-amber-700 dark:text-amber-400 border border-amber-200 dark:border-amber-900 cursor-pointer hover:bg-amber-500/20'
+                        : day.isPast
+                          ? 'text-muted-foreground/40'
+                          : 'text-foreground/80 hover:bg-secondary'
+                }`}
+              >
+                {day && (
+                  <>
+                    <span>{day.date}</span>
+                    {day.reminders.length > 0 && (
+                      <span className={`text-[8px] font-bold leading-none ${
+                        selectedCalendarDay === day.dateStr ? 'text-primary-foreground/80' : ''
+                      }`}>
+                        {day.reminders.length}
+                      </span>
+                    )}
+                  </>
+                )}
+              </button>
+            ))}
+          </div>
+
+          {/* Legend */}
+          <div className="flex gap-4 text-[10px] text-muted-foreground">
+            <div className="flex items-center gap-1.5">
+              <div className="w-2.5 h-2.5 rounded bg-red-500/15 border border-red-200" />
+              Overdue
+            </div>
+            <div className="flex items-center gap-1.5">
+              <div className="w-2.5 h-2.5 rounded bg-amber-500/15 border border-amber-200" />
+              Upcoming
+            </div>
+          </div>
+
+          {/* Selected Day Tasks */}
+          {selectedCalendarDay && selectedDayReminders.length > 0 && (
+            <div className="border-t border-border/40 pt-4 space-y-2">
+              <div className="flex items-center justify-between">
+                <h4 className="text-sm font-semibold">
+                  {new Date(selectedCalendarDay + 'T12:00:00').toLocaleDateString('en-US', { month: 'long', day: 'numeric' })}
+                </h4>
+                <button
+                  onClick={() => setSelectedCalendarDay(null)}
+                  className="p-0.5 rounded text-muted-foreground hover:text-foreground"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+              {selectedDayReminders.map(r => (
+                <div key={r.id} className="bg-muted/30 border border-border/40 rounded-xl p-3 flex items-start gap-3">
+                  {r.item?.image_url && (
+                    <img src={r.item.image_url} alt="" className="w-9 h-9 rounded-lg object-cover shrink-0" />
+                  )}
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium">{r.task_description}</p>
+                    <p className="text-xs text-muted-foreground">{r.item?.name || 'Unknown Tool'}</p>
+                  </div>
+                  <button
+                    onClick={() => handleMarkDone(r)}
+                    className="p-1.5 bg-emerald-500/10 text-emerald-600 border border-emerald-500/20 rounded-lg hover:bg-emerald-500/20 transition-colors shrink-0"
+                  >
+                    <CheckCircle2 className="w-4 h-4" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+          {selectedCalendarDay && selectedDayReminders.length === 0 && (
+            <p className="text-xs text-muted-foreground border-t border-border/40 pt-3">
+              No tasks scheduled for {new Date(selectedCalendarDay + 'T12:00:00').toLocaleDateString('en-US', { month: 'long', day: 'numeric' })}.
+            </p>
+          )}
+        </div>
+      )}
+
+      {/* List View sections (only shown in list mode) */}
+      {viewMode === 'list' && <>
+
       {/* Due Now */}
       {dueReminders.length > 0 && (
         <div className="space-y-3">
@@ -372,6 +569,8 @@ export const MaintenancePage: React.FC = () => {
           </>
         )}
       </div>
+
+      </> /* end viewMode === 'list' */}
     </div>
   );
 

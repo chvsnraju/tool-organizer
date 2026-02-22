@@ -77,34 +77,50 @@ export function LoginScreen() {
   };
 
   return (
-    <div className="min-h-screen bg-background flex flex-col items-center justify-center px-6">
+    <div className="min-h-screen bg-background flex flex-col items-center justify-center px-6 relative overflow-hidden">
+      {/* Decorative background blobs */}
+      <div className="absolute inset-0 overflow-hidden pointer-events-none" aria-hidden="true">
+        <div className="absolute -top-32 -left-32 w-[400px] h-[400px] rounded-full bg-primary/10 blur-3xl" />
+        <div className="absolute -bottom-40 -right-24 w-[320px] h-[320px] rounded-full bg-violet-500/8 blur-3xl" />
+        <div className="absolute top-1/2 left-3/4 w-[200px] h-[200px] rounded-full bg-emerald-500/6 blur-3xl" />
+      </div>
+
       <motion.div
         initial={{ opacity: 0, y: 24 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.4, ease: 'easeOut' }}
-        className="w-full max-w-sm flex flex-col items-center gap-8"
+        className="w-full max-w-sm flex flex-col items-center gap-10 relative"
       >
         {/* Branding */}
-        <div className="flex flex-col items-center gap-4">
-          <div className="w-20 h-20 rounded-3xl bg-primary/10 text-primary flex items-center justify-center shadow-lg">
-            <Layout className="w-10 h-10" strokeWidth={1.5} />
+        <div className="flex flex-col items-center gap-5">
+          {/* Icon with layered glow */}
+          <div className="relative">
+            <div className="absolute inset-0 rounded-[28px] bg-primary/25 blur-xl scale-125" />
+            <div className="relative w-[72px] h-[72px] rounded-[28px] bg-gradient-to-br from-primary/20 via-primary/10 to-primary/5 text-primary flex items-center justify-center border border-primary/20 shadow-xl shadow-primary/15">
+              <Layout className="w-9 h-9" strokeWidth={1.5} />
+            </div>
           </div>
-          <div className="text-center">
+          <div className="text-center space-y-1">
             <h1 className="text-3xl font-heading font-bold tracking-tight">ToolShed AI</h1>
-            <p className="mt-1 text-sm text-muted-foreground">Your smart tool inventory</p>
+            <p className="text-sm text-muted-foreground">Your smart tool inventory</p>
           </div>
         </div>
 
-        {/* Sign-in card */}
-        <div className="w-full glass rounded-2xl border border-white/20 dark:border-white/10 p-6 flex flex-col gap-4">
-          <p className="text-sm text-center text-muted-foreground">
-            Sign in to access your inventory
-          </p>
+        {/* Sign-in card — M3 elevated surface */}
+        <div className="w-full bg-card/85 backdrop-blur-sm rounded-3xl p-6 flex flex-col gap-5 border border-border/40"
+          style={{ boxShadow: '0 4px 32px rgba(0,0,0,0.08), 0 1px 4px rgba(0,0,0,0.04)' }}
+        >
+          <div className="text-center space-y-1">
+            <p className="text-sm font-medium text-foreground">Welcome back</p>
+            <p className="text-xs text-muted-foreground">Sign in to access your inventory</p>
+          </div>
 
+          {/* Google Sign-in — M3 elevated tonal button */}
           <button
             onClick={handleGoogleSignIn}
             disabled={loading}
-            className="w-full flex items-center justify-center gap-3 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl py-3 px-4 text-sm font-medium text-zinc-800 dark:text-zinc-100 shadow-sm active:scale-95 transition-all disabled:opacity-60 disabled:cursor-not-allowed"
+            className="w-full flex items-center justify-center gap-3 bg-white dark:bg-zinc-800 rounded-2xl py-3.5 px-4 text-sm font-semibold text-zinc-800 dark:text-zinc-100 active:scale-[0.98] transition-all duration-150 disabled:opacity-60 disabled:cursor-not-allowed"
+            style={{ boxShadow: '0 1px 4px rgba(0,0,0,0.14), 0 2px 12px rgba(0,0,0,0.08)' }}
           >
             {loading ? (
               <svg className="w-5 h-5 animate-spin text-muted-foreground" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
@@ -123,9 +139,15 @@ export function LoginScreen() {
           </button>
 
           {error && (
-            <p className="text-xs text-red-500 text-center">{error}</p>
+            <div className="flex items-center gap-2 px-3 py-2 bg-destructive/10 border border-destructive/20 rounded-xl">
+              <p className="text-xs text-destructive text-center flex-1">{error}</p>
+            </div>
           )}
         </div>
+
+        <p className="text-[11px] text-muted-foreground/60 text-center">
+          By continuing, you agree to our terms of service
+        </p>
       </motion.div>
     </div>
   );

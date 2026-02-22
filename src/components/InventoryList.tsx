@@ -4,7 +4,8 @@ import { supabase } from '../lib/supabase';
 import { smartSearch } from '../lib/gemini';
 import {
   Loader2, Package, Search, MapPin, X, Camera, Sparkles, TrendingUp,
-  Star, DollarSign, AlertCircle, Mic, MicOff, Brain, ChevronUp
+  Star, DollarSign, AlertCircle, Mic, MicOff, Brain, ChevronUp,
+  BarChart3, Trash2, CheckCheck, ArrowLeftRight, ShoppingCart, Check
 } from 'lucide-react';
 import type { Item } from '../types';
 import { useToast } from '../hooks/useToast';
@@ -76,6 +77,11 @@ export const InventoryList: React.FC = () => {
   const [isListening, setIsListening] = useState(false);
   const [showScrollTop, setShowScrollTop] = useState(false);
   const [visibleCount, setVisibleCount] = useState(ITEMS_BATCH_SIZE);
+
+  // Bulk edit
+  const [bulkMode, setBulkMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkDeleting, setBulkDeleting] = useState(false);
   const loadMoreRef = useRef<HTMLDivElement | null>(null);
 
   const fetchItems = async () => {
@@ -202,6 +208,45 @@ export const InventoryList: React.FC = () => {
     }
   };
 
+  const exitBulkMode = () => {
+    setBulkMode(false);
+    setSelectedIds(new Set());
+  };
+
+  const toggleSelect = (id: string) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const handleSelectAll = () => {
+    if (selectedIds.size === filteredItems.length) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(filteredItems.map(i => i.id)));
+    }
+  };
+
+  const handleBulkDelete = async () => {
+    const ids = Array.from(selectedIds);
+    if (ids.length === 0) return;
+    setBulkDeleting(true);
+    try {
+      const { error } = await supabase.from('items').delete().in('id', ids);
+      if (error) throw error;
+      setItems(prev => prev.filter(i => !selectedIds.has(i.id)));
+      addToast(`Deleted ${ids.length} item${ids.length > 1 ? 's' : ''}`, 'success');
+      exitBulkMode();
+    } catch (err) {
+      addToast('Delete failed: ' + (err as Error).message, 'error');
+    } finally {
+      setBulkDeleting(false);
+    }
+  };
+
   const handleSmartSearch = async () => {
     if (!searchTerm.trim()) {
       addToast('Please enter what you are looking for in the search bar first.', 'info');
@@ -282,7 +327,8 @@ export const InventoryList: React.FC = () => {
         item.name.toLowerCase().includes(term) ||
         item.description?.toLowerCase().includes(term) ||
         item.category?.toLowerCase().includes(term) ||
-        item.tags?.some(tag => tag.toLowerCase().includes(term));
+        item.tags?.some(tag => tag.toLowerCase().includes(term)) ||
+        (item.specs && Object.values(item.specs).some(v => String(v).toLowerCase().includes(term)));
 
       const matchesCategory = !categoryFilter || item.category === categoryFilter;
       const matchesFavorite = !showFavoritesOnly || item.is_favorite;
@@ -412,7 +458,7 @@ export const InventoryList: React.FC = () => {
 
   return (
     <div className="p-4 pb-24 space-y-4">
-      {/* Dashboard Stats */}
+      {/* Dashboard Stats — M3 tonal chips with icons */}
       {items.length > 0 && (
         <div className="grid grid-cols-4 gap-2">
           <button
@@ -422,31 +468,35 @@ export const InventoryList: React.FC = () => {
               setShowFavoritesOnly(false);
               setSmartSearchResults(null);
             }}
-            className="bg-white dark:bg-card border border-border/40 rounded-xl p-2.5 text-center hover:border-primary/30 transition-colors"
+            className="flex flex-col items-center gap-1 bg-primary/10 border border-primary/20 rounded-2xl py-3 px-2 text-center hover:bg-primary/15 active:scale-95 transition-all"
           >
-            <p className="text-lg font-bold text-foreground">{stats.totalItems}</p>
-            <p className="text-[10px] text-muted-foreground">Tools</p>
+            <Package className="w-4 h-4 text-primary" />
+            <p className="text-base font-bold text-foreground leading-none">{stats.totalItems}</p>
+            <p className="text-[9px] font-medium text-muted-foreground">Tools</p>
           </button>
           <button
             onClick={() => navigate('/locations')}
-            className="bg-white dark:bg-card border border-border/40 rounded-xl p-2.5 text-center hover:border-primary/30 transition-colors"
+            className="flex flex-col items-center gap-1 bg-emerald-500/10 border border-emerald-500/20 rounded-2xl py-3 px-2 text-center hover:bg-emerald-500/15 active:scale-95 transition-all"
           >
-            <p className="text-lg font-bold text-foreground">{stats.totalLocations}</p>
-            <p className="text-[10px] text-muted-foreground">Locations</p>
+            <MapPin className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+            <p className="text-base font-bold text-foreground leading-none">{stats.totalLocations}</p>
+            <p className="text-[9px] font-medium text-muted-foreground">Places</p>
           </button>
           <button
             onClick={() => navigate('/lending')}
-            className="bg-white dark:bg-card border border-border/40 rounded-xl p-2.5 text-center hover:border-primary/30 transition-colors"
+            className="flex flex-col items-center gap-1 bg-amber-500/10 border border-amber-500/20 rounded-2xl py-3 px-2 text-center hover:bg-amber-500/15 active:scale-95 transition-all"
           >
-            <p className="text-lg font-bold text-foreground">{stats.lentCount}</p>
-            <p className="text-[10px] text-muted-foreground">Lent</p>
+            <ArrowLeftRight className="w-4 h-4 text-amber-600 dark:text-amber-400" />
+            <p className="text-base font-bold text-foreground leading-none">{stats.lentCount}</p>
+            <p className="text-[9px] font-medium text-muted-foreground">Lent</p>
           </button>
           <button
             onClick={() => navigate('/shopping')}
-            className="bg-white dark:bg-card border border-border/40 rounded-xl p-2.5 text-center hover:border-primary/30 transition-colors"
+            className="flex flex-col items-center gap-1 bg-rose-500/10 border border-rose-500/20 rounded-2xl py-3 px-2 text-center hover:bg-rose-500/15 active:scale-95 transition-all"
           >
-            <p className="text-lg font-bold text-primary">{stats.shoppingCount}</p>
-            <p className="text-[10px] text-muted-foreground">To Buy</p>
+            <ShoppingCart className="w-4 h-4 text-rose-500" />
+            <p className="text-base font-bold text-rose-500 leading-none">{stats.shoppingCount}</p>
+            <p className="text-[9px] font-medium text-muted-foreground">To Buy</p>
           </button>
         </div>
       )}
@@ -483,36 +533,42 @@ export const InventoryList: React.FC = () => {
         <div className="flex gap-2">
           <Link
             to="/scan"
-            className="flex-1 flex items-center gap-2 px-3 py-2.5 bg-primary/5 border border-primary/20 rounded-xl text-sm font-medium text-primary hover:bg-primary/10 transition-colors"
+            className="flex-1 flex items-center gap-2 px-3 py-2.5 bg-primary/10 border border-primary/20 rounded-2xl text-sm font-semibold text-primary hover:bg-primary/15 active:scale-95 transition-all"
           >
-            <Camera className="w-4 h-4" /> Scan Tool
+            <Camera className="w-4 h-4 shrink-0" /> Scan Tool
           </Link>
           <Link
             to="/assistant"
-            className="flex-1 flex items-center gap-2 px-3 py-2.5 bg-violet-500/5 border border-violet-500/20 rounded-xl text-sm font-medium text-violet-600 dark:text-violet-400 hover:bg-violet-500/10 transition-colors"
+            className="flex-1 flex items-center gap-2 px-3 py-2.5 bg-violet-500/10 border border-violet-500/20 rounded-2xl text-sm font-semibold text-violet-600 dark:text-violet-400 hover:bg-violet-500/15 active:scale-95 transition-all"
           >
-            <Sparkles className="w-4 h-4" /> Plan Project
+            <Sparkles className="w-4 h-4 shrink-0" /> AI Plan
+          </Link>
+          <Link
+            to="/analytics"
+            className="flex-1 flex items-center gap-2 px-3 py-2.5 bg-emerald-500/10 border border-emerald-500/20 rounded-2xl text-sm font-semibold text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/15 active:scale-95 transition-all"
+          >
+            <BarChart3 className="w-4 h-4 shrink-0" /> Stats
           </Link>
         </div>
       )}
 
-      <div className="sticky top-2 z-20 rounded-2xl border border-border/40 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80 p-2 space-y-2">
-        {/* Search Bar */}
+      <div className="sticky top-2 z-20 rounded-3xl bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80 shadow-sm shadow-black/5 border border-border/30 p-2.5 space-y-2">
+        {/* Search Bar — M3 filled pill */}
         <div className="flex gap-2">
           <div className="relative flex-1">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground/60" />
+            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground/60" />
             <input
               type="text"
               placeholder="Search tools, categories, tags..."
               value={searchTerm}
               onChange={e => { setSearchTerm(e.target.value); setSmartSearchResults(null); }}
               onKeyDown={e => e.key === 'Enter' && handleSmartSearch()}
-              className="w-full pl-9 pr-9 py-2.5 rounded-xl border bg-card text-sm shadow-sm focus:ring-2 focus:ring-primary/20 focus:border-primary/30 outline-none transition-all placeholder:text-muted-foreground/50"
+              className="w-full pl-10 pr-9 py-2.5 rounded-full bg-secondary/60 text-sm border-0 focus:ring-2 focus:ring-primary/20 focus:bg-secondary/80 outline-none transition-all placeholder:text-muted-foreground/50"
             />
             {searchTerm && (
               <button
                 onClick={() => { setSearchTerm(''); setSmartSearchResults(null); }}
-                className="absolute right-3 top-1/2 -translate-y-1/2 p-0.5 rounded-full hover:bg-secondary transition-colors"
+                className="absolute right-3 top-1/2 -translate-y-1/2 p-0.5 rounded-full hover:bg-muted transition-colors"
                 aria-label="Clear search"
               >
                 <X className="w-3.5 h-3.5 text-muted-foreground" />
@@ -521,8 +577,8 @@ export const InventoryList: React.FC = () => {
           </div>
           <button
             onClick={startVoiceSearch}
-            className={`shrink-0 p-2.5 rounded-xl border transition-colors ${
-              isListening ? 'bg-red-500/10 border-red-500/30 text-red-500 animate-pulse' : 'bg-card border-border/60 text-muted-foreground hover:text-foreground'
+            className={`shrink-0 p-2.5 rounded-full border transition-colors ${
+              isListening ? 'bg-red-500/10 border-red-500/30 text-red-500 animate-pulse' : 'bg-secondary/60 border-0 text-muted-foreground hover:bg-secondary hover:text-foreground'
             }`}
             aria-label={isListening ? 'Stop voice search' : 'Start voice search'}
             aria-pressed={isListening}
@@ -532,7 +588,7 @@ export const InventoryList: React.FC = () => {
           <button
             onClick={handleSmartSearch}
             disabled={isSmartSearching}
-            className="shrink-0 p-2.5 rounded-xl border bg-violet-500/5 border-violet-500/20 text-violet-600 dark:text-violet-400 hover:bg-violet-500/10 transition-colors disabled:opacity-40"
+            className="shrink-0 p-2.5 rounded-full bg-violet-500/10 border-0 text-violet-600 dark:text-violet-400 hover:bg-violet-500/15 transition-colors disabled:opacity-40"
             aria-label="AI smart search"
           >
             {isSmartSearching ? <Loader2 className="w-4 h-4 animate-spin" aria-hidden="true" /> : <Brain className="w-4 h-4" aria-hidden="true" />}
@@ -561,31 +617,36 @@ export const InventoryList: React.FC = () => {
           </div>
         )}
 
-        {/* Filter Row */}
+        {/* Filter Row — M3 filter chips */}
         <div className="flex gap-1.5 overflow-x-auto pb-1 scrollbar-none">
           {/* Favorites toggle */}
           <button
             onClick={() => setShowFavoritesOnly(!showFavoritesOnly)}
             aria-pressed={showFavoritesOnly}
-            className={`shrink-0 px-3.5 py-1.5 rounded-full text-[11px] font-medium transition-all flex items-center gap-1 ${
+            className={`shrink-0 flex items-center gap-1 py-1.5 rounded-full text-[11px] font-medium transition-all ${
               showFavoritesOnly
-                ? 'bg-amber-500/20 text-amber-600 dark:text-amber-400 border border-amber-500/30'
-                : 'bg-card text-muted-foreground border border-border/60 hover:border-amber-500/40'
+                ? 'chip-filter-active bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-500/25 pl-2.5 pr-3'
+                : 'chip-filter px-3.5'
             }`}
           >
-            <Star className={`w-3 h-3 ${showFavoritesOnly ? 'fill-current' : ''}`} aria-hidden="true" /> Favorites
+            {showFavoritesOnly
+              ? <Star className="w-3 h-3 fill-current shrink-0" aria-hidden="true" />
+              : <Star className="w-3 h-3 shrink-0" aria-hidden="true" />
+            }
+            Favorites
           </button>
 
-          {/* Category Pills */}
+          {/* Category Chips */}
           <button
             onClick={() => setCategoryFilter(null)}
             aria-pressed={!categoryFilter && !showFavoritesOnly}
-            className={`shrink-0 px-3.5 py-1.5 rounded-full text-[11px] font-medium transition-all ${
+            className={`shrink-0 flex items-center gap-1 py-1.5 rounded-full text-[11px] font-medium transition-all ${
               !categoryFilter && !showFavoritesOnly
-                ? 'bg-primary text-primary-foreground shadow-sm'
-                : 'bg-card text-muted-foreground border border-border/60 hover:border-primary/40 hover:text-foreground'
+                ? 'chip-filter-active pl-2.5 pr-3'
+                : 'chip-filter px-3.5'
             }`}
           >
+            {(!categoryFilter && !showFavoritesOnly) && <Check className="w-3 h-3 shrink-0" aria-hidden="true" />}
             All
           </button>
           {categories.map(cat => (
@@ -593,12 +654,13 @@ export const InventoryList: React.FC = () => {
               key={cat}
               onClick={() => setCategoryFilter(categoryFilter === cat ? null : cat)}
               aria-pressed={categoryFilter === cat}
-              className={`shrink-0 px-3.5 py-1.5 rounded-full text-[11px] font-medium transition-all ${
+              className={`shrink-0 flex items-center gap-1 py-1.5 rounded-full text-[11px] font-medium transition-all ${
                 categoryFilter === cat
-                  ? 'bg-primary text-primary-foreground shadow-sm'
-                  : 'bg-card text-muted-foreground border border-border/60 hover:border-primary/40 hover:text-foreground'
+                  ? 'chip-filter-active pl-2.5 pr-3'
+                  : 'chip-filter px-3.5'
               }`}
             >
+              {categoryFilter === cat && <Check className="w-3 h-3 shrink-0" aria-hidden="true" />}
               {cat}
             </button>
           ))}
@@ -617,10 +679,24 @@ export const InventoryList: React.FC = () => {
 
       {/* Section Header */}
       <div className="flex items-center justify-between pt-1">
-        <h2 className="text-base font-semibold tracking-tight">
-          {showFavoritesOnly ? '⭐ Favorites' : categoryFilter ? categoryFilter : 'My Tools'}
+        <h2 className="text-base font-bold tracking-tight">
+          {showFavoritesOnly ? 'Favorites' : categoryFilter ? categoryFilter : 'My Tools'}
         </h2>
-        <span className="text-xs text-muted-foreground tabular-nums">{filteredItems.length} items</span>
+        <div className="flex items-center gap-2">
+          <span className="text-xs text-muted-foreground tabular-nums font-medium">{filteredItems.length} items</span>
+          {items.length > 0 && (
+            <button
+              onClick={() => { setBulkMode(v => !v); setSelectedIds(new Set()); }}
+              className={`text-xs px-3 py-1 rounded-full font-semibold transition-all ${
+                bulkMode
+                  ? 'bg-primary text-primary-foreground shadow-sm'
+                  : 'bg-secondary text-muted-foreground border border-border/40 hover:text-foreground hover:border-primary/30'
+              }`}
+            >
+              {bulkMode ? 'Done' : 'Select'}
+            </button>
+          )}
+        </div>
       </div>
 
       {(searchTerm || categoryFilter || showFavoritesOnly) && (
@@ -709,14 +785,19 @@ export const InventoryList: React.FC = () => {
             const isRecent = recentItemIds.has(item.id);
             const isLowStock = item.is_consumable && item.low_stock_threshold &&
               item.low_stock_threshold > 0 && (item.quantity || 1) <= item.low_stock_threshold;
+            const isSelected = selectedIds.has(item.id);
             return (
               <motion.button
                 variants={itemVariants}
                 key={item.id}
-                className="group text-left rounded-2xl overflow-hidden bg-white dark:bg-card border border-border/40 shadow-sm hover:shadow-md hover:border-primary/20 transition-all duration-300 flex flex-col relative"
-                whileHover={prefersReducedMotion ? undefined : { y: -4, boxShadow: "0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1)" }}
-                whileTap={prefersReducedMotion ? undefined : { scale: 0.96 }}
-                onClick={() => navigate(`/items/${item.id}`)}
+                className={`group text-left rounded-3xl overflow-hidden bg-card flex flex-col relative transition-all duration-200 ${
+                  bulkMode && isSelected
+                    ? 'ring-2 ring-primary ring-offset-1 shadow-lg shadow-primary/15'
+                    : 'shadow-[0_1px_3px_rgba(0,0,0,0.07),_0_4px_12px_rgba(0,0,0,0.05)]'
+                }`}
+                whileHover={prefersReducedMotion ? undefined : { y: -3, boxShadow: "0 8px 28px -4px rgba(0,0,0,0.12), 0 4px 10px -2px rgba(0,0,0,0.08)" }}
+                whileTap={prefersReducedMotion ? undefined : { scale: 0.97 }}
+                onClick={() => bulkMode ? toggleSelect(item.id) : navigate(`/items/${item.id}`)}
                 style={{ contentVisibility: 'auto', containIntrinsicSize: '280px' }}
               >
                 {/* Thumbnail */}
@@ -734,30 +815,43 @@ export const InventoryList: React.FC = () => {
                     </div>
                   )}
 
-                  {/* Category Badge */}
-                  {item.category && (
-                    <span className="absolute top-2 left-2 text-[10px] font-semibold px-2 py-0.5 bg-black/60 text-white backdrop-blur-md rounded-full border border-white/10">
+                  {/* Bulk Mode Checkbox */}
+                  {bulkMode && (
+                    <div className={`absolute top-2 left-2 w-6 h-6 rounded-full border-2 flex items-center justify-center transition-colors z-10 ${
+                      isSelected
+                        ? 'bg-primary border-primary text-primary-foreground'
+                        : 'bg-black/40 border-white/60 backdrop-blur-sm'
+                    }`}>
+                      {isSelected && <CheckCheck className="w-3.5 h-3.5" />}
+                    </div>
+                  )}
+
+                  {/* Category Badge (hidden in bulk mode to reduce clutter) */}
+                  {item.category && !bulkMode && (
+                    <span className="absolute top-2 left-2 text-[9px] font-bold px-2 py-0.5 bg-black/55 text-white/95 backdrop-blur-sm rounded-full tracking-wide uppercase">
                       {item.category}
                     </span>
                   )}
 
-                  {/* Favorite */}
-                  <button
-                    onClick={(e) => handleToggleFavorite(item, e)}
-                    className="absolute top-2 right-2 p-1 rounded-full bg-black/40 backdrop-blur-sm hover:bg-black/60 transition-colors z-10"
-                  >
-                    <Star className={`w-3.5 h-3.5 ${item.is_favorite ? 'fill-amber-400 text-amber-400' : 'text-white/70'}`} />
-                  </button>
+                  {/* Favorite (hidden in bulk mode) */}
+                  {!bulkMode && (
+                    <button
+                      onClick={(e) => handleToggleFavorite(item, e)}
+                      className="absolute top-2 right-2 p-1 rounded-full bg-black/40 backdrop-blur-sm hover:bg-black/60 transition-colors z-10"
+                    >
+                      <Star className={`w-3.5 h-3.5 ${item.is_favorite ? 'fill-amber-400 text-amber-400' : 'text-white/70'}`} />
+                    </button>
+                  )}
 
                   {/* New Badge */}
-                  {isRecent && !searchTerm && !categoryFilter && (
+                  {isRecent && !searchTerm && !categoryFilter && !bulkMode && (
                     <span className="absolute bottom-2 right-2 text-[9px] font-bold px-1.5 py-0.5 bg-primary text-primary-foreground rounded-full">
                       NEW
                     </span>
                   )}
 
                   {/* Low Stock Badge */}
-                  {isLowStock && (
+                  {isLowStock && !bulkMode && (
                     <span className="absolute bottom-2 left-2 text-[9px] font-bold px-1.5 py-0.5 bg-orange-500 text-white rounded-full flex items-center gap-0.5">
                       <AlertCircle className="w-2.5 h-2.5" /> LOW
                     </span>
@@ -765,16 +859,16 @@ export const InventoryList: React.FC = () => {
                 </div>
 
                 {/* Info */}
-                <div className="p-3 flex flex-col gap-1">
-                  <h3 className="font-semibold text-sm leading-tight line-clamp-2 text-foreground/90 group-hover:text-primary transition-colors">{item.name}</h3>
+                <div className="p-3.5 flex flex-col gap-1.5">
+                  <h3 className="font-semibold text-sm leading-snug line-clamp-2 text-foreground group-hover:text-primary transition-colors duration-200">{item.name}</h3>
                   <div className="flex items-center gap-2">
                     {locationPath && (
                       <p className="text-[11px] font-medium text-muted-foreground flex items-center gap-1 line-clamp-1 flex-1 min-w-0">
-                        <MapPin className="w-3 h-3 text-primary/70 shrink-0" /> {locationPath}
+                        <MapPin className="w-3 h-3 text-primary/60 shrink-0" /> {locationPath}
                       </p>
                     )}
-                    {item.estimated_price && (
-                      <span className="text-[10px] font-medium text-emerald-600 dark:text-emerald-400 flex items-center gap-0.5 shrink-0">
+                    {item.estimated_price && !bulkMode && (
+                      <span className="text-[10px] font-semibold text-emerald-600 dark:text-emerald-400 flex items-center gap-0.5 shrink-0">
                         <DollarSign className="w-2.5 h-2.5" /> {item.estimated_price}
                       </span>
                     )}
@@ -792,7 +886,32 @@ export const InventoryList: React.FC = () => {
         </div>
       )}
 
-      {showScrollTop && (
+      {/* Bulk Action Bar */}
+      {bulkMode && (
+        <div className="fixed bottom-24 left-4 right-4 z-50">
+          <div className="glass rounded-[20px] p-3 flex items-center gap-2 shadow-xl shadow-black/10 border border-white/30 dark:border-white/10">
+            <span className="text-sm font-semibold flex-1 tabular-nums">
+              {selectedIds.size} selected
+            </span>
+            <button
+              onClick={handleSelectAll}
+              className="text-xs px-3.5 py-1.5 bg-secondary rounded-full font-semibold hover:bg-secondary/80 transition-colors"
+            >
+              {selectedIds.size === filteredItems.length ? 'Deselect All' : 'Select All'}
+            </button>
+            <button
+              onClick={handleBulkDelete}
+              disabled={selectedIds.size === 0 || bulkDeleting}
+              className="flex items-center gap-1.5 text-xs px-3.5 py-1.5 bg-destructive/10 text-destructive border border-destructive/20 rounded-full font-semibold disabled:opacity-50 hover:bg-destructive/20 transition-colors"
+            >
+              {bulkDeleting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
+              Delete
+            </button>
+          </div>
+        </div>
+      )}
+
+      {showScrollTop && !bulkMode && (
         <button
           onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
           className="fixed bottom-24 right-4 z-40 p-3 rounded-full bg-primary text-primary-foreground shadow-lg shadow-primary/25 hover:bg-primary/90 transition-colors"

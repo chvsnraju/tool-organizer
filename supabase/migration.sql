@@ -83,6 +83,38 @@ CREATE INDEX IF NOT EXISTS idx_maintenance_reminders_due
 -- INSERT INTO storage.buckets (id, name, public) VALUES ('items', 'items', true) ON CONFLICT DO NOTHING;
 -- INSERT INTO storage.buckets (id, name, public) VALUES ('containers', 'containers', true) ON CONFLICT DO NOTHING;
 
+-- Add last_used_at timestamp to items (for usage tracking)
+ALTER TABLE items ADD COLUMN IF NOT EXISTS last_used_at timestamptz;
+
+-- Create item_notes table for service history / timestamped notes
+CREATE TABLE IF NOT EXISTS item_notes (
+  id uuid DEFAULT uuid_generate_v4() PRIMARY KEY,
+  item_id uuid REFERENCES items(id) ON DELETE CASCADE NOT NULL,
+  note_text text NOT NULL,
+  created_at timestamptz DEFAULT timezone('utc'::text, now()) NOT NULL,
+  user_id uuid DEFAULT auth.uid()
+);
+
+ALTER TABLE item_notes ENABLE ROW LEVEL SECURITY;
+
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies WHERE policyname = 'Users can manage their own item notes'
+  ) THEN
+    CREATE POLICY "Users can manage their own item notes"
+      ON item_notes FOR ALL
+      USING (auth.uid() = user_id);
+  END IF;
+END $$;
+
+CREATE INDEX IF NOT EXISTS idx_item_notes_item_id ON item_notes(item_id);
+CREATE INDEX IF NOT EXISTS idx_item_notes_user_id ON item_notes(user_id);
+CREATE INDEX IF NOT EXISTS idx_items_last_used_at ON items(last_used_at);
+
+-- Storage buckets for receipts
+-- INSERT INTO storage.buckets (id, name, public) VALUES ('receipts', 'receipts', true) ON CONFLICT DO NOTHING;
+
 -- Storage object policies (required for authenticated uploads)
 DO $$
 BEGIN

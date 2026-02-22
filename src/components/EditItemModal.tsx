@@ -445,19 +445,31 @@ export const EditItemModal: React.FC<EditItemModalProps> = ({ item, isOpen, onCl
   const conditions: ItemCondition[] = ['new', 'good', 'fair', 'worn', 'needs-repair'];
 
   return (
-    <div className="fixed inset-0 z-[80] flex items-end sm:items-center justify-center p-0 sm:p-4 isolation-isolate">
-      <div className="absolute inset-0 bg-black/65 backdrop-blur-[1px]" onClick={onClose} />
+    // On mobile: outer div IS the scroll container (most reliable on Android WebView)
+    // On desktop: outer div is the backdrop; inner panel scrolls via overflow-y-auto
+    <div
+      className="fixed top-0 left-0 right-0 z-[80] bg-[hsl(var(--background))] overflow-y-scroll sm:bg-transparent sm:overflow-hidden sm:flex sm:items-center sm:justify-center sm:p-4"
+      style={{ height: '100dvh', touchAction: 'pan-y', overscrollBehavior: 'contain' }}
+    >
+      {/* Backdrop — desktop only */}
+      <div className="hidden sm:block absolute inset-0 bg-black/60 backdrop-blur-[1px]" onClick={onClose} />
 
-      <div className="relative z-10 bg-[hsl(var(--background))] text-[hsl(var(--foreground))] w-full max-w-lg rounded-t-2xl sm:rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[92vh] border border-border">
+      {/* Panel: min-h-full on mobile pushes footer to bottom; centered card on desktop */}
+      <div className="relative z-10 min-h-screen w-full flex flex-col bg-[hsl(var(--background))] text-[hsl(var(--foreground))] sm:min-h-0 sm:flex-none sm:max-w-lg sm:max-h-[92vh] sm:rounded-3xl sm:overflow-hidden sm:shadow-2xl sm:border sm:border-border/50">
 
-        <div className="px-5 pt-4 pb-3 border-b border-border/70 flex items-center justify-between shrink-0">
+        {/* Status-bar safe area — mobile only */}
+        <div className="pt-safe sm:hidden shrink-0" />
+
+        {/* Header — sticky on mobile so it stays put while outer div scrolls */}
+        <div className="sticky top-0 z-10 px-5 pt-3 pb-3 border-b border-border/50 flex items-center justify-between shrink-0 bg-[hsl(var(--background))]">
           <h3 className="font-bold text-lg">Edit Item</h3>
-          <button onClick={onClose} className="p-1.5 hover:bg-secondary rounded-full transition-colors">
-            <X className="w-4 h-4 text-muted-foreground" />
+          <button onClick={onClose} className="p-2 hover:bg-secondary rounded-full transition-colors" aria-label="Close">
+            <X className="w-5 h-5 text-muted-foreground" />
           </button>
         </div>
 
-        <div className="px-5 py-4 space-y-4 overflow-y-auto flex-1 bg-[hsl(var(--background))]">
+        {/* Content — no overflow on mobile (outer div scrolls); overflow-y-auto on desktop */}
+        <div className="px-5 py-4 space-y-4 flex-1 bg-[hsl(var(--background))] sm:overflow-y-auto">
 
           {/* Image Gallery */}
           <div>
@@ -466,7 +478,7 @@ export const EditItemModal: React.FC<EditItemModalProps> = ({ item, isOpen, onCl
               {images.map((url, index) => (
                 <div
                   key={index}
-                  className={`relative shrink-0 w-32 h-32 rounded-xl overflow-hidden border-2 transition-all ${index === 0 ? 'border-primary ring-2 ring-primary/20' : 'border-border hover:border-primary/50'}`}
+                  className={`relative shrink-0 w-24 h-24 rounded-xl overflow-hidden border-2 transition-all ${index === 0 ? 'border-primary ring-2 ring-primary/20' : 'border-border hover:border-primary/50'}`}
                 >
                   <img src={url} alt="" className="w-full h-full object-cover" />
                   <button type="button" onClick={() => handleSetMainImage(index)} className="absolute inset-0 z-10" title={index === 0 ? 'Main photo' : 'Set as main photo'} aria-label={index === 0 ? 'Main photo' : 'Set as main photo'} />
@@ -743,13 +755,13 @@ export const EditItemModal: React.FC<EditItemModalProps> = ({ item, isOpen, onCl
           <ContainerSelector value={containerId} onChange={setContainerId} />
         </div>
 
-        {/* Footer */}
-        <div className="px-5 py-3.5 border-t border-border/70 bg-[hsl(var(--muted)/0.2)] flex items-center gap-2 shrink-0">
-          <button onClick={onClose} className="flex-1 py-2.5 text-sm text-muted-foreground hover:bg-secondary rounded-lg transition-colors">Cancel</button>
+        {/* Footer — sticky on mobile so it stays at the bottom while outer div scrolls */}
+        <div className="sticky bottom-0 z-10 px-5 py-3 pb-[max(12px,env(safe-area-inset-bottom))] border-t border-border/50 bg-[hsl(var(--background))] flex items-center gap-3 shrink-0">
+          <button onClick={onClose} className="px-5 py-3 text-sm font-medium text-muted-foreground hover:bg-secondary rounded-2xl transition-colors">Cancel</button>
           <button
             onClick={handleSave}
             disabled={saving || uploadingImage || enriching || !name.trim()}
-            className="flex-1 py-2.5 bg-primary text-primary-foreground rounded-lg text-sm font-medium flex items-center justify-center gap-2 disabled:opacity-50 transition-colors"
+            className="flex-1 py-3 bg-primary text-primary-foreground rounded-2xl text-sm font-semibold flex items-center justify-center gap-2 disabled:opacity-50 transition-colors shadow-sm shadow-primary/20"
           >
             {saving ? <><Loader2 className="w-4 h-4 animate-spin" /> Saving...</> : <><Save className="w-4 h-4" /> Save Changes</>}
           </button>

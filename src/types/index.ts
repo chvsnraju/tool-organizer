@@ -45,6 +45,15 @@ export interface Item {
   purchase_date?: string | null;
   purchase_price?: number | null;
   receipt_image_url?: string | null;
+  last_used_at?: string | null;
+}
+
+export interface ItemNote {
+  id: string;
+  item_id: string;
+  note_text: string;
+  created_at: string;
+  user_id?: string;
 }
 
 export interface ShoppingListItem {

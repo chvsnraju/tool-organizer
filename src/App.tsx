@@ -25,6 +25,7 @@ const ItemDetailPage = lazy(() => import('./pages/ItemDetailPage').then(module =
 const ShoppingListPage = lazy(() => import('./pages/ShoppingListPage').then(module => ({ default: module.ShoppingListPage })));
 const LendingPage = lazy(() => import('./pages/LendingPage').then(module => ({ default: module.LendingPage })));
 const MaintenancePage = lazy(() => import('./pages/MaintenancePage').then(module => ({ default: module.MaintenancePage })));
+const AnalyticsPage = lazy(() => import('./pages/AnalyticsPage').then(module => ({ default: module.AnalyticsPage })));
 
 const PageWrapper = ({ children }: { children: React.ReactNode }) => {
   return (
@@ -151,7 +152,7 @@ function AppContent() {
         initial={{ y: -100 }}
         animate={{ y: 0 }}
         transition={{ type: 'spring', stiffness: 300, damping: 30 }}
-        className="fixed top-0 left-0 right-0 z-50 glass border-b border-white/20 dark:border-white/10"
+        className="fixed top-0 left-0 right-0 z-50 glass border-b border-white/30 dark:border-white/10 shadow-sm shadow-black/5"
       >
         <div className="pt-safe" />
         <div className="px-5 py-3 flex items-center justify-between">
@@ -192,6 +193,7 @@ function AppContent() {
               <Route path="/shopping" element={<PageWrapper><ShoppingListPage /></PageWrapper>} />
               <Route path="/lending" element={<PageWrapper><LendingPage /></PageWrapper>} />
               <Route path="/maintenance" element={<PageWrapper><MaintenancePage /></PageWrapper>} />
+              <Route path="/analytics" element={<PageWrapper><AnalyticsPage /></PageWrapper>} />
             </Routes>
           </AnimatePresence>
         </Suspense>
@@ -200,7 +202,7 @@ function AppContent() {
       {/* Floating Bottom Navigation */}
       <nav className="fixed bottom-0 left-0 right-0 z-40 pb-safe pointer-events-none">
         <div className="mx-4 mb-4 pointer-events-auto">
-          <div className="glass rounded-2xl shadow-xl shadow-black/5 border border-white/20 dark:border-white/10 flex justify-around items-center px-1 h-[68px]">
+          <div className="glass rounded-[28px] shadow-lg shadow-black/10 border border-white/30 dark:border-white/10 flex justify-around items-center px-2 h-[68px]">
             <NavIcon to="/" icon={Home} label="Home" active={isActive('/')} />
             <NavIcon 
               to="/locations" 
@@ -248,15 +250,18 @@ function AppContent() {
 
 function NavIcon({ to, icon: Icon, label, active }: { to: string; icon: React.FC<React.SVGProps<SVGSVGElement> & { className?: string; strokeWidth?: number }>; label: string; active: boolean }) {
   return (
-    <Link 
-      to={to} 
-      className={`flex flex-col items-center justify-center w-14 h-full gap-1 transition-all duration-300 active:scale-95 ${active ? 'text-primary' : 'text-muted-foreground hover:text-foreground'}`}
+    <Link
+      to={to}
+      className={`flex flex-col items-center justify-center w-14 h-full gap-0.5 transition-all duration-200 active:scale-95 ${active ? 'text-primary' : 'text-muted-foreground hover:text-foreground'}`}
     >
-      <div className={`relative p-1 rounded-xl transition-all ${active ? 'bg-primary/10' : ''}`}>
-        <Icon className={`w-6 h-6 ${active ? 'fill-primary/20' : ''}`} strokeWidth={2} />
+      {/* M3-style pill active indicator */}
+      <div className={`flex items-center justify-center w-14 h-8 rounded-full transition-all duration-300 ${active ? 'bg-primary/15' : 'hover:bg-muted/60'}`}>
+        <Icon
+          className={`transition-all duration-200 ${active ? 'w-[22px] h-[22px] fill-primary/25' : 'w-5 h-5'}`}
+          strokeWidth={active ? 2.5 : 2}
+        />
       </div>
-      <span className="text-[10px] font-medium tracking-tight">{label}</span>
-      {active && <span className="absolute bottom-2 w-1 h-1 rounded-full bg-primary" />}
+      <span className={`text-[10px] tracking-tight transition-all duration-200 ${active ? 'font-semibold' : 'font-medium'}`}>{label}</span>
     </Link>
   );
 }

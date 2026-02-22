@@ -122,15 +122,55 @@
 
 @layer utilities {
   .glass {
-    @apply bg-white/70 dark:bg-black/70 backdrop-blur-md border border-white/20 dark:border-white/10;
+    @apply bg-white/75 dark:bg-black/75 backdrop-blur-xl border border-white/30 dark:border-white/10;
   }
-  
+
   .glass-card {
     @apply bg-card/80 backdrop-blur-sm border border-border/50 shadow-sm;
   }
 
   .active-press {
     @apply active:scale-95 transition-transform duration-100;
+  }
+
+  /* M3-style state layer — add to a position:relative parent */
+  .state-layer {
+    position: relative;
+    overflow: hidden;
+  }
+  .state-layer::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    background: currentColor;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.15s ease;
+  }
+  .state-layer:hover::after { opacity: 0.06; }
+  .state-layer:active::after { opacity: 0.10; }
+
+  /* M3 elevated card — shadow instead of border */
+  .card-m3 {
+    @apply bg-card rounded-3xl;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.07), 0 4px 12px rgba(0,0,0,0.05);
+  }
+
+  /* M3 tonal card — primary surface tint */
+  .card-tonal {
+    @apply bg-primary/5 border border-primary/10 rounded-2xl;
+  }
+
+  /* M3 filter chip — outlined resting, tonal active */
+  .chip-filter {
+    @apply inline-flex items-center gap-1 px-3 py-1.5 rounded-full text-[11px] font-medium border border-border/60
+           text-muted-foreground transition-all select-none
+           hover:border-primary/40 hover:text-foreground;
+  }
+  .chip-filter-active {
+    @apply inline-flex items-center gap-1 pl-2.5 pr-3 py-1.5 rounded-full text-[11px] font-medium border
+           bg-primary/10 text-primary border-primary/25 shadow-sm transition-all select-none;
   }
 }
 
@@ -166,6 +206,10 @@
 /* Global button/interactive styles */
 button, a {
   @apply cursor-pointer touch-manipulation;
+}
+/* Allow vertical scroll gestures to propagate through form inputs to ancestor scroll containers */
+input, textarea, select {
+  touch-action: pan-y;
 }
 button:active:not(:disabled), a:active:not([aria-disabled="true"]) {
   @apply scale-[0.97] transition-transform duration-100;

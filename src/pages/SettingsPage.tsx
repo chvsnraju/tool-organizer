@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Save, KeyRound, ShieldCheck, Loader2, Download, FileText, FileJson, User, Upload, LogOut, Bell, BellOff, DollarSign } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { Save, KeyRound, ShieldCheck, Loader2, Download, FileText, FileJson, User, Upload, LogOut, Bell, BellOff, DollarSign, BarChart3, Plus } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useToast } from '../hooks/useToast';
 import { clearSmartRemindersLastSync, getSmartRemindersLastSync, isSmartRemindersEnabled, setSmartRemindersEnabled, SMART_REMINDERS_SYNCED_EVENT, syncSmartReminders, triggerSmartReminderSync } from '../lib/notifications';
@@ -25,6 +26,7 @@ interface BackupPayload {
 }
 
 export const SettingsPage: React.FC = () => {
+  const navigate = useNavigate();
   const [provider, setProvider] = useState<AIProvider>('gemini');
   const [apiKey, setApiKey] = useState('');
   const [saved, setSaved] = useState(false);
@@ -45,6 +47,8 @@ export const SettingsPage: React.FC = () => {
   const [loadingWorkspaces, setLoadingWorkspaces] = useState(true);
   const [joinWorkspaceId, setJoinWorkspaceId] = useState('');
   const [joining, setJoining] = useState(false);
+  const [createWorkspaceName, setCreateWorkspaceName] = useState('');
+  const [creating, setCreating] = useState(false);
 
   const backupInputRef = useRef<HTMLInputElement>(null);
   const savedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -423,6 +427,38 @@ export const SettingsPage: React.FC = () => {
       addToast('Failed to join workspace: ' + (error as Error).message, 'error');
     } finally {
       setJoining(false);
+    }
+  };
+
+  const handleCreateWorkspace = async () => {
+    const name = createWorkspaceName.trim();
+    if (!name) return;
+    setCreating(true);
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error('You must be signed in to create a workspace.');
+
+      const { data: ws, error: wsError } = await supabase
+        .from('workspaces')
+        .insert({ name, owner_id: user.id })
+        .select('id, name')
+        .single();
+      if (wsError) throw wsError;
+
+      const { error: memberError } = await supabase.from('workspace_members').insert({
+        workspace_id: ws.id,
+        user_id: user.id,
+        role: 'owner',
+      });
+      if (memberError) throw memberError;
+
+      addToast(`Workspace "${name}" created!`, 'success');
+      setCreateWorkspaceName('');
+      loadWorkspaces(user.id);
+    } catch (error) {
+      addToast('Failed to create workspace: ' + (error as Error).message, 'error');
+    } finally {
+      setCreating(false);
     }
   };
 
@@ -861,6 +897,27 @@ export const SettingsPage: React.FC = () => {
         )}
 
         <div className="pt-3 border-t space-y-3">
+          <p className="text-xs font-semibold">Create a Workspace</p>
+          <div className="flex gap-2">
+            <input
+              type="text"
+              placeholder="Workspace name..."
+              value={createWorkspaceName}
+              onChange={(e) => setCreateWorkspaceName(e.target.value)}
+              className="flex-1 bg-background border border-border px-3 py-2 text-sm rounded-lg outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary/40"
+            />
+            <button
+              onClick={handleCreateWorkspace}
+              disabled={creating || !createWorkspaceName.trim()}
+              className="flex items-center gap-1.5 px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors disabled:opacity-50 text-sm font-medium whitespace-nowrap"
+            >
+              {creating ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
+              Create
+            </button>
+          </div>
+        </div>
+
+        <div className="pt-3 border-t space-y-3">
           <p className="text-xs font-semibold">Join a Workspace</p>
           <div className="flex gap-2">
             <input
@@ -933,13 +990,22 @@ export const SettingsPage: React.FC = () => {
           <DollarSign className="w-8 h-8 text-emerald-500/50" />
         </div>
 
-        <button
-          onClick={exportInsurancePDF}
-          className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-emerald-500 text-white rounded-lg hover:bg-emerald-600 transition-colors text-sm font-medium"
-        >
-          <FileText className="w-4 h-4" />
-          Generate Insurance Report (PDF)
-        </button>
+        <div className="flex gap-2">
+          <button
+            onClick={exportInsurancePDF}
+            className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-emerald-500 text-white rounded-lg hover:bg-emerald-600 transition-colors text-sm font-medium"
+          >
+            <FileText className="w-4 h-4" />
+            Insurance Report
+          </button>
+          <button
+            onClick={() => navigate('/analytics')}
+            className="flex items-center justify-center gap-2 px-4 py-2.5 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 rounded-lg hover:bg-emerald-500/20 transition-colors text-sm font-medium"
+          >
+            <BarChart3 className="w-4 h-4" />
+            Analytics
+          </button>
+        </div>
       </div>
 
       {/* Export / Share */}
